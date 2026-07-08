@@ -15,18 +15,48 @@ The composite exposes the following inputs.
 Their names and defaults are effectively public API for every source repository that consumes the action.
 See `action.yml` itself for the current descriptions; the summary here is the contract:
 
-| Input                  | Required | Default                                            | Purpose                                                                           |
-| ---------------------- | -------- | -------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `source-root`          | no       | `.`                                                | Directory containing the source docs, relative to the caller workspace            |
-| `transformations-file` | no       | `.github/workflows/sync-docs/transformations.yaml` | Path (relative to `source-root`) to the transformation declarations               |
-| `target-repository`    | no       | `dash0hq/dash0-website`                            | The docs repo to push to                                                          |
-| `target-directory`     | no       | `src/app/(core)/docs/content`                      | Directory inside the target repo receiving the transformed files                  |
-| `target-github-token`  | yes      | —                                                  | Fine-grained PAT with `contents:write` + `pull-requests:write` on the target repo |
-| `target-base-branch`   | no       | `main`                                             | Branch the PR is opened against                                                   |
-| `pr-branch`            | yes      | —                                                  | Branch name used for the sync PR                                                  |
-| `pr-title`             | yes      | —                                                  | PR title                                                                          |
-| `pr-body`              | yes      | —                                                  | PR body                                                                           |
-| `commit-message`       | no       | value of `pr-title`                                | Commit message when the sync produces changes                                     |
+| Input                  | Required | Default                                            | Purpose                                                                                                                                                                  |
+| ---------------------- | -------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `source-root`          | no       | `.`                                                | Directory containing the source docs, relative to the caller workspace                                                                                                   |
+| `transformations-file` | no       | `.github/workflows/sync-docs/transformations.yaml` | Path (relative to `source-root`) to the transformation declarations                                                                                                      |
+| `target-repository`    | no       | `dash0hq/dash0-website`                            | The docs repo to push to                                                                                                                                                 |
+| `target-directory`     | no       | `src/app/(core)/docs/content`                      | Sub-tree inside the target repo where transformed files are written. `target:` values in `transformations.yaml` are resolved **relative to this directory** — see below. |
+| `target-github-token`  | yes      | —                                                  | Fine-grained PAT with `contents:write` + `pull-requests:write` on the target repo                                                                                        |
+| `target-base-branch`   | no       | `main`                                             | Branch the PR is opened against                                                                                                                                          |
+| `pr-branch`            | yes      | —                                                  | Branch name used for the sync PR                                                                                                                                         |
+| `pr-title`             | yes      | —                                                  | PR title                                                                                                                                                                 |
+| `pr-body`              | yes      | —                                                  | PR body                                                                                                                                                                  |
+| `commit-message`       | no       | value of `pr-title`                                | Commit message when the sync produces changes                                                                                                                            |
+
+## `target-directory` and `target:` — how paths compose
+
+The composite writes transformed files to `<target-repository>/<target-directory>/<target>` where `<target>` is the value from `transformations.yaml`.
+`<target>` is therefore **relative to `target-directory`**, not to the target-repository root.
+
+Example: the `otel-cicd-action` caller uses the defaults:
+
+- `target-directory: src/app/(core)/docs/content` (default)
+- `transformations.yaml`:
+  ```yaml
+  files:
+    - source: README.md
+      target: dash0/miscellaneous/manage-as-code/manage-cicd-observability-as-code.md
+  ```
+
+The file lands at
+`src/app/(core)/docs/content/dash0/miscellaneous/manage-as-code/manage-cicd-observability-as-code.md`
+in `dash0-website` — the two paths concatenated.
+
+Common mistakes:
+
+- **Repeating the `target-directory` prefix in `target:`.**
+  If you set `target-directory: docs` and write `target: docs/foo.md`, the file lands at `docs/docs/foo.md`.
+  Fix: drop the redundant `docs/` from `target:`.
+- **Writing an absolute path in `target:`** (leading `/`).
+  Not supported; the engine treats `target:` as a relative path and joins it with the output directory.
+
+The scope invariant the composite enforces: after writing, `git add` is scoped to `<target-directory>` and nothing else in the target repository is staged.
+This is how the "the sync only affects paths under `target-directory`" property is preserved even if a caller's `target:` value accidentally escapes the intended sub-tree.
 
 ## Recommended caller-side secret naming
 
