@@ -1,0 +1,32 @@
+{
+  "name": "sync-docs-action",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Composite GitHub Action + supporting libraries that sync source-repository documentation into dash0-website.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dash0hq/sync-docs-action.git"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@10.33.4",
+  "scripts": {
+    "test": "pnpm --recursive --parallel test",
+    "typecheck": "pnpm --recursive --parallel typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^10.0.0",
+    "prettier": "^3.4.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+pnpm-lock.yaml
+dist/
+.pnpm-store/
+
+# Do not rewrite the Apache 2.0 boilerplate.
+LICENSE

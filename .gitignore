@@ -1,0 +1,17 @@
+node_modules/
+
+# Build artifacts
+dist/
+*.tsbuildinfo
+
+# Local
+.env
+.env.local
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Test cache
+.tap/

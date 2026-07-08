@@ -1,0 +1,162 @@
+# SPDX-FileCopyrightText: Copyright 2026 Dash0 Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Sync docs to the Dash0 website
+description: >-
+  Transform documentation files from a source repository according to its transformations.yaml
+  and open (or update) a pull request in the Dash0 documentation repository.
+
+# This composite action is intended to be called from a source repository (for example
+# dash0hq/otel-cicd-action, dash0hq/dash0-sdk-web, dash0hq/dash0-operator). The caller checks out its
+# own repository first, then invokes this action; the transformation logic and the PR flow live here
+# so every source repository shares the same implementation.
+#
+# Prerequisite in the caller workflow:
+#   - actions/checkout@v6 (the caller's own repository)
+#
+# The caller supplies:
+#   - a transformations.yaml file within its repo
+#   - a fine-grained PAT scoped to the target documentation repository, with
+#     `contents:write` (push the branch) and `pull-requests:write` (open the PR).
+
+inputs:
+  source-root:
+    description: >-
+      Path (relative to the caller's workspace) to the root of the source repository — the directory that
+      contains the documentation files referenced from the transformations file.
+    required: false
+    default: "."
+  transformations-file:
+    description: >-
+      Path (relative to source-root) to the transformations.yaml file describing the sync.
+    required: false
+    default: ".github/workflows/sync-docs/transformations.yaml"
+  target-repository:
+    description: The owner/name of the documentation repository the sync writes into.
+    required: false
+    default: dash0hq/dash0-website
+  target-directory:
+    description: >-
+      Path (relative to the target repository root) that receives the transformed files. This is where
+      the transformations' `target` paths are resolved from.
+    required: false
+    default: src/app/(core)/docs/content
+  target-github-token:
+    description: >-
+      Token used to push the sync branch and open the pull request in the target repository.
+      Must have `contents:write` and `pull-requests:write` on the target repository.
+    required: true
+  target-base-branch:
+    description: Branch in the target repository the pull request is opened against.
+    required: false
+    default: main
+  pr-branch:
+    description: Branch name used for the sync pull request in the target repository.
+    required: true
+  pr-title:
+    description: Title of the pull request opened against the target repository.
+    required: true
+  pr-body:
+    description: Body of the pull request opened against the target repository.
+    required: true
+  commit-message:
+    description: Commit message used when the sync produces changes.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: set up Node.js
+      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      with:
+        node-version-file: ${{ github.action_path }}/.nvmrc
+
+    - name: set up pnpm
+      uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6.0.5
+      with:
+        # The action stores its own package manager version in package.json; use it here so pnpm and
+        # setup-node agree on the layout of node_modules.
+        package_json_file: ${{ github.action_path }}/package.json
+        run_install: false
+
+    - name: install action dependencies
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: pnpm install --frozen-lockfile
+
+    - name: apply doc transformations
+      shell: bash
+      env:
+        SOURCE_ROOT: ${{ inputs.source-root }}
+        TRANSFORMATIONS_FILE: ${{ inputs.transformations-file }}
+      run: |
+        node "${GITHUB_ACTION_PATH}/packages/transformation-engine/src/apply-transformations.ts" \
+          "${SOURCE_ROOT}" \
+          "${SOURCE_ROOT}/${TRANSFORMATIONS_FILE}" \
+          "${RUNNER_TEMP}/transformed-docs"
+
+    - name: checkout target repository
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        repository: ${{ inputs.target-repository }}
+        token: ${{ inputs.target-github-token }}
+        ref: ${{ inputs.target-base-branch }}
+        path: .sync-docs-target-repository
+
+    - name: copy transformed docs
+      shell: bash
+      env:
+        TARGET_DIRECTORY: ${{ inputs.target-directory }}
+      run: |
+        target_path=".sync-docs-target-repository/${TARGET_DIRECTORY}"
+        mkdir -p "${target_path}"
+        cp -R "${RUNNER_TEMP}/transformed-docs/." "${target_path}/"
+
+    - name: create pull request in target repository
+      shell: bash
+      working-directory: .sync-docs-target-repository
+      env:
+        GH_TOKEN: ${{ inputs.target-github-token }}
+        TARGET_DIRECTORY: ${{ inputs.target-directory }}
+        TARGET_BASE_BRANCH: ${{ inputs.target-base-branch }}
+        PR_BRANCH: ${{ inputs.pr-branch }}
+        PR_TITLE: ${{ inputs.pr-title }}
+        PR_BODY: ${{ inputs.pr-body }}
+        COMMIT_MESSAGE: ${{ inputs.commit-message }}
+      run: |
+        commit_message="${COMMIT_MESSAGE}"
+        if [ -z "${commit_message}" ]; then
+          commit_message="${PR_TITLE}"
+        fi
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        # Stage all changes within the target directory so they are visible to the diff check below.
+        git add --all -- "${TARGET_DIRECTORY}"
+
+        # git diff --cached --quiet exits with 1 if there are staged differences, 0 means the docs are
+        # already up to date. The lastUpdated timestamp changes on every run, so it is ignored (via -I)
+        # when determining whether the docs are up to date.
+        if git diff --cached --quiet -I '^lastUpdated: ' -- "${TARGET_DIRECTORY}"; then
+          echo "The documentation is already up to date, nothing to do."
+          exit 0
+        fi
+
+        echo "The documentation has changed, creating/updating a pull request."
+        git checkout -B "${PR_BRANCH}"
+        git commit --message "${commit_message}"
+        git push --force origin "${PR_BRANCH}"
+
+        # Only open a new PR if there is no open one for this branch yet (otherwise the force-push
+        # above already updated the existing PR).
+        if [ -z "$(gh pr list --head "${PR_BRANCH}" --state open --json number --jq '.[].number')" ]; then
+          gh pr create \
+            --base "${TARGET_BASE_BRANCH}" \
+            --head "${PR_BRANCH}" \
+            --title "${PR_TITLE}" \
+            --body "${PR_BODY}"
+        else
+          echo "An open pull request for branch ${PR_BRANCH} already exists, it was updated by the force-push above."
+        fi

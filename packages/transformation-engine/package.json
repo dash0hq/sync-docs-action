@@ -1,0 +1,23 @@
+{
+  "name": "@dash0hq/transformation-engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Applies transformations.yaml-declared modifications to source-repository documentation files. Invoked by the sync-docs-action composite at runtime.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "node --test --test-reporter=spec 'src/*.test.ts'",
+    "test:watch": "node --test --watch 'src/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.0"
+  }
+}
