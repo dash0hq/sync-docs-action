@@ -80,12 +80,23 @@ runs:
       with:
         node-version: ${{ steps.node-version.outputs.version }}
 
+    - name: Read required pnpm version from the action's package.json
+      id: pnpm-version
+      shell: bash
+      # `pnpm/action-setup`'s `package_json_file` input has the same resolution quirk as
+      # `actions/setup-node`'s `node-version-file`: absolute paths derived from `github.action_path`
+      # get concatenated with `$GITHUB_WORKSPACE` and the file is not found, at which point the
+      # action silently falls back to the caller's package.json (which does not declare a
+      # `packageManager` field) and fails with "No pnpm version is specified". Read the value here
+      # and pass it as a literal `version` instead. Node is on PATH because setup-node just ran.
+      run: |
+        version=$(node -p "require('${GITHUB_ACTION_PATH}/package.json').packageManager.replace('pnpm@', '')")
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
     - name: set up pnpm
       uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6.0.5
       with:
-        # The action stores its own package manager version in package.json; use it here so pnpm and
-        # setup-node agree on the layout of node_modules.
-        package_json_file: ${{ github.action_path }}/package.json
+        version: ${{ steps.pnpm-version.outputs.version }}
         run_install: false
 
     - name: install action dependencies
