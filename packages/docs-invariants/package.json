@@ -1,10 +1,32 @@
 {
   "name": "@dash0hq/docs-invariants",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
   "type": "module",
   "description": "Invariants library for dash0-website's docs tree: redirect uniqueness, dangling-URL detection, deletion-without-redirect check. Consumed by both dash0hq/sync-docs-action and dash0hq/dash0-website.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dash0hq/sync-docs-action.git",
+    "directory": "packages/docs-invariants"
+  },
+  "homepage": "https://github.com/dash0hq/sync-docs-action/tree/main/packages/docs-invariants",
+  "bugs": {
+    "url": "https://github.com/dash0hq/sync-docs-action/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "files": [
+    "src/**/*.ts",
+    "!src/**/*.test.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "engines": {
     "node": ">=24.0.0"
   },
