@@ -29,21 +29,34 @@ Semver rules for `action.yml`:
 ### 2. `@dash0hq/docs-invariants`
 
 **Consumed by** `dash0-website`'s own CI via npm.
-Not published in the initial scaffold; the process below applies once the package is unmasked (`"private": false`).
 
 **Versioning.** Semver on the `version` field in `packages/docs-invariants/package.json`.
+Package tags are namespaced (`docs-invariants-v<X.Y.Z>`) so they don't collide with the composite action's tags on the same repo.
 
-**When to publish.** Whenever the CLI or programmatic API surface stabilises to the point that downstream can rely on it, and whenever a bug fix or behaviour change wants to reach consumers.
+**When to publish.** Whenever the API surface stabilises to the point that downstream can rely on it, and whenever a bug fix or behaviour change wants to reach consumers.
 
-**How to publish** (once the workflow lands):
+**How to publish** (once the tag lands):
 
-1. Bump `version` in `packages/docs-invariants/package.json` on `main`.
-2. Push a tag `docs-invariants-v<X.Y.Z>` (namespaced so it doesn't collide with the composite action's tags).
-3. CI runs `pnpm publish --filter @dash0hq/docs-invariants` from the tagged commit, authenticated via the `DASH0_NPMJS_PUBLISH_TOKEN` repository secret.
-4. Update `dash0-website`'s dependency to the new version (separate PR in that repo).
+1. Bump `version` in `packages/docs-invariants/package.json` on `main` via a normal PR.
+   The publish workflow refuses to publish if the tag version does not match the package.json version.
+2. After merge, tag from `main`:
+   ```bash
+   git tag -a docs-invariants-v<X.Y.Z> -m "Release @dash0hq/docs-invariants v<X.Y.Z>"
+   git push origin docs-invariants-v<X.Y.Z>
+   ```
+3. `.github/workflows/publish.yml` fires on the tag push.
+   It reinstalls, verifies the version match, runs typecheck + tests, then `pnpm --filter @dash0hq/docs-invariants publish --access public --no-git-checks` with npm provenance enabled.
+4. Update `dash0-website`'s dependency to the new version in a separate PR in that repo.
 
-The `DASH0_NPMJS_PUBLISH_TOKEN` secret is an org-scoped npm automation token; it must be present on this repository before the first release workflow run.
-Rotate it whenever a maintainer with access to the token leaves the org.
+**Prerequisites** the publish workflow expects on this repository:
+
+- **`DASH0_NPMJS_PUBLISH_TOKEN`** repository secret — an npm automation token with publish access on the `@dash0hq` scope.
+  Rotate it whenever a maintainer with access to the token leaves the org.
+- The npm `@dash0hq` scope must exist and grant the token publish permission.
+- The workflow uses `id-token: write` to attach provenance attestations, so npm can verify the tarball was built from this exact commit.
+
+**Pre-release tags** (e.g. `docs-invariants-v0.1.0-alpha.1`) are supported: the workflow's tag pattern matches both plain semver and pre-release suffixes.
+Use pre-release tags to iterate before cutting a stable release.
 
 ## CHANGELOG
 
