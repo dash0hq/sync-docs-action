@@ -105,12 +105,52 @@ Fields:
 - `id` — stable identifier for the section (matches `dash0-website`'s existing nav.json convention).
 - `parentPath` — optional; parent section title shown in the nav breadcrumb.
 - `title` — the section title rendered as `items[0].title`.
+- `groupTitles` — optional map from directory slug to display title, used when the file targets nest below the common prefix (see [Nested groups](#nested-groups) below).
 
-The generator emits a single group under `items[0]` whose `children` are `{ title, path }` entries, one per file in `files`, in declared order.
-Each child's `title` comes from that file's `title`; its `path` is the file's `target`.
+The generator emits a single group under `items[0]` whose `children` reflect the on-disk hierarchy of the `target` paths.
+Each leaf is a `{ title, path }` entry whose `title` comes from the file's `title` and whose `path` is the file's `target`, in the order the files are declared.
 
-This produces the same shape used across `dash0-website` (`items[0]` with a `title` and a `children` list of `{ title, path }` leaves).
-For more complex nav trees (nested groups, hand-authored `children`), continue to maintain the `nav.json` by hand — the engine intentionally only covers the flat-group case that source-repo syncs need.
+For a flat sync (every file lands in the same directory), this produces the same shape used across `dash0-website` (`items[0]` with a `title` and a `children` list of `{ title, path }` leaves).
+
+### Nested groups
+
+When some files sit in a subdirectory below the common directory prefix of every `target`, those subdirectories become **group** nodes in the emitted tree.
+The engine walks each file's `target`, strips the longest directory prefix shared by every file, and inserts the remaining path segments as nested `{ title, children }` groups.
+
+Given, for example:
+
+```yaml
+nav:
+  target: dash0-cli/nav.json
+  order: 72.6
+  id: dash0-cli
+  parentPath: Tooling
+  title: Dash0 CLI
+  groupTitles:
+    github-actions: GitHub Actions
+
+files:
+  - source: docs/about.md
+    target: miscellaneous/tooling/dash0-cli/about.md
+    title: About the Dash0 CLI
+    description: ...
+  - source: docs/commands.md
+    target: miscellaneous/tooling/dash0-cli/commands.md
+    title: Command Reference
+    description: ...
+  - source: .github/actions/setup/README.md
+    target: miscellaneous/tooling/dash0-cli/github-actions/setup.md
+    title: Setup Dash0 CLI
+    description: ...
+  - source: .github/actions/send-log-event/README.md
+    target: miscellaneous/tooling/dash0-cli/github-actions/send-log-event.md
+    title: Send log event
+    description: ...
+```
+
+The common prefix is `miscellaneous/tooling/dash0-cli`, so the first two files land as top-level leaves and the last two are grouped under a `"GitHub Actions"` node (title looked up in `groupTitles`; slugs not listed there fall back to using the slug itself).
+Nesting can go arbitrarily deep — every additional directory segment produces another group level.
+Groups are inserted at the position of the first file that references them; a later file reusing the same subdirectory joins the existing group instead of opening a new one.
 
 ## Extension points
 
