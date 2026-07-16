@@ -13,6 +13,7 @@ import {
 	compileRegex,
 	describeTransformation,
 	expandTemplate,
+	generateNav,
 	parseConfig,
 	prependFrontmatter,
 	removeLine,
@@ -22,6 +23,7 @@ import {
 	substitutePlaceholders,
 	transformContent,
 	type FileEntry,
+	type NavConfig,
 	type Placeholders,
 	type RemoveLineTransformation,
 	type Transformation,
@@ -582,6 +584,7 @@ files:
 		assert.equal(cfg.files.length, 1);
 		assert.equal(cfg.files[0]?.source, "README.md");
 		assert.deepEqual(cfg.common, []);
+		assert.equal(cfg.nav, undefined);
 	});
 
 	it("parses common and file-specific transformations", () => {
@@ -714,5 +717,138 @@ files:
         flags: multiline
 `;
 		assert.throws(() => parseConfig(yaml), /flags must be a list of strings/);
+	});
+
+	it("parses a nav block", () => {
+		const yaml = `
+nav:
+  target: dash0/miscellaneous/glossary/nav.json
+  order: 74
+  id: glossary
+  parentPath: Miscellaneous
+  title: Glossary
+files:
+  - source: README.md
+    target: dash0/miscellaneous/glossary/foo.md
+    title: T
+    description: D
+`;
+		const cfg = parseConfig(yaml);
+		assert.deepEqual(cfg.nav, {
+			target: "dash0/miscellaneous/glossary/nav.json",
+			order: 74,
+			id: "glossary",
+			parentPath: "Miscellaneous",
+			title: "Glossary",
+		});
+	});
+
+	it("parses a nav block without parentPath", () => {
+		const yaml = `
+nav:
+  target: otelbin/nav.json
+  order: 1
+  id: otelbin
+  title: OTelBin
+files:
+  - source: README.md
+    target: otelbin/overview.md
+    title: T
+    description: D
+`;
+		const cfg = parseConfig(yaml);
+		assert.equal(cfg.nav?.parentPath, undefined);
+		assert.equal(cfg.nav?.id, "otelbin");
+	});
+
+	it("rejects a nav block missing required fields", () => {
+		const yaml = `
+nav:
+  target: nav.json
+  id: x
+  title: X
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+`;
+		assert.throws(() => parseConfig(yaml), /nav\.order must be a finite number/);
+	});
+
+	it("rejects a nav.parentPath that is empty", () => {
+		const yaml = `
+nav:
+  target: nav.json
+  order: 1
+  id: x
+  parentPath: ""
+  title: X
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+`;
+		assert.throws(() => parseConfig(yaml), /nav\.parentPath.*non-empty/);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// generateNav
+// ---------------------------------------------------------------------------
+
+describe("generateNav", () => {
+	const navConfig: NavConfig = {
+		target: "dash0/miscellaneous/glossary/nav.json",
+		order: 74,
+		id: "glossary",
+		parentPath: "Miscellaneous",
+		title: "Glossary",
+	};
+
+	it("produces the expected nav.json shape from a file list", () => {
+		const files: FileEntry[] = [
+			fileEntry({
+				target: "dash0/miscellaneous/glossary/overview.md",
+				title: "About the Glossary",
+			}),
+			fileEntry({
+				target: "dash0/miscellaneous/glossary/access-control.md",
+				title: "Access Control",
+			}),
+		];
+		const nav = generateNav(navConfig, files);
+		assert.deepEqual(nav, {
+			order: 74,
+			id: "glossary",
+			parentPath: "Miscellaneous",
+			items: [
+				{
+					title: "Glossary",
+					children: [
+						{ title: "About the Glossary", path: "dash0/miscellaneous/glossary/overview.md" },
+						{ title: "Access Control", path: "dash0/miscellaneous/glossary/access-control.md" },
+					],
+				},
+			],
+		});
+	});
+
+	it("omits parentPath from the output when not set on the config", () => {
+		const cfg: NavConfig = { target: "nav.json", order: 1, id: "x", title: "X" };
+		const nav = generateNav(cfg, [fileEntry({ target: "x/a.md", title: "A" })]);
+		assert.ok(!("parentPath" in nav));
+	});
+
+	it("preserves the declaration order of files", () => {
+		const files: FileEntry[] = [
+			fileEntry({ target: "a/z.md", title: "Z" }),
+			fileEntry({ target: "a/a.md", title: "A" }),
+			fileEntry({ target: "a/m.md", title: "M" }),
+		];
+		const nav = generateNav(navConfig, files);
+		const titles = nav.items[0]?.children?.map((c) => c.title);
+		assert.deepEqual(titles, ["Z", "A", "M"]);
 	});
 });

@@ -7,8 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
-import { checkAllDocsCovered, run } from "./apply-transformations.ts";
-import type { FileEntry } from "./transformations.ts";
+import { run } from "./apply-transformations.ts";
 
 // ---------------------------------------------------------------------------
 // Filesystem test harness
@@ -31,68 +30,8 @@ function write(relPath: string, content: string): string {
 	return abs;
 }
 
-function fileEntry(overrides: Partial<FileEntry> = {}): FileEntry {
-	return {
-		source: "README.md",
-		target: "out.md",
-		title: "Test Title",
-		description: "Test description.",
-		...overrides,
-	};
-}
-
 const FIXED_NOW = new Date("2026-04-20T05:00:00.123Z");
 const FIXED_TIMESTAMP = "2026-04-20T05:00:00.123Z";
-
-// ---------------------------------------------------------------------------
-// checkAllDocsCovered
-// ---------------------------------------------------------------------------
-
-describe("checkAllDocsCovered", () => {
-	it("passes when every *.md file under docs/ is declared", () => {
-		fs.mkdirSync(path.join(workDir, "docs"));
-		fs.writeFileSync(path.join(workDir, "docs/a.md"), "");
-		fs.writeFileSync(path.join(workDir, "docs/b.md"), "");
-		const files: FileEntry[] = [
-			fileEntry({ source: "docs/a.md" }),
-			fileEntry({ source: "docs/b.md" }),
-		];
-		assert.doesNotThrow(() => checkAllDocsCovered(workDir, files));
-	});
-
-	it("throws listing all undeclared *.md files under docs/", () => {
-		fs.mkdirSync(path.join(workDir, "docs"));
-		fs.writeFileSync(path.join(workDir, "docs/a.md"), "");
-		fs.writeFileSync(path.join(workDir, "docs/b.md"), "");
-		fs.writeFileSync(path.join(workDir, "docs/c.md"), "");
-		const files: FileEntry[] = [fileEntry({ source: "docs/b.md" })];
-		assert.throws(
-			() => checkAllDocsCovered(workDir, files),
-			/not declared in transformations\.yaml: docs\/a\.md, docs\/c\.md/,
-		);
-	});
-
-	it("ignores non-md files under docs/", () => {
-		fs.mkdirSync(path.join(workDir, "docs"));
-		fs.writeFileSync(path.join(workDir, "docs/a.md"), "");
-		fs.writeFileSync(path.join(workDir, "docs/image.png"), "");
-		const files: FileEntry[] = [fileEntry({ source: "docs/a.md" })];
-		assert.doesNotThrow(() => checkAllDocsCovered(workDir, files));
-	});
-
-	it("ignores dotfiles under docs/ (e.g. .docs-structure.md)", () => {
-		fs.mkdirSync(path.join(workDir, "docs"));
-		fs.writeFileSync(path.join(workDir, "docs/a.md"), "");
-		fs.writeFileSync(path.join(workDir, "docs/.docs-structure.md"), "");
-		const files: FileEntry[] = [fileEntry({ source: "docs/a.md" })];
-		assert.doesNotThrow(() => checkAllDocsCovered(workDir, files));
-	});
-
-	it("skips the check when the source repo has no docs/ directory", () => {
-		const files: FileEntry[] = [fileEntry({ source: "README.md" })];
-		assert.doesNotThrow(() => checkAllDocsCovered(workDir, files));
-	});
-});
 
 // ---------------------------------------------------------------------------
 // run — full pipeline through filesystem
@@ -183,10 +122,9 @@ files:
 		assert.ok(fs.existsSync(path.join(outDir, "two.md")));
 	});
 
-	it("fails when the transformations.yaml misses a *.md file under docs/", () => {
-		write("README.md", "body");
-		write("docs/covered.md", "body");
-		write("docs/uncovered.md", "body");
+	it("ignores docs/*.md files that are not declared in files", () => {
+		write("docs/covered.md", "body\n");
+		write("docs/ignored.md", "body\n");
 		const yamlPath = write(
 			"transformations.yaml",
 			`
@@ -197,10 +135,10 @@ files:
     description: D
 `,
 		);
-		assert.throws(
-			() => run(workDir, yamlPath, path.join(workDir, "out"), { now: FIXED_NOW, log: () => {} }),
-			/docs\/uncovered\.md/,
-		);
+		const outDir = path.join(workDir, "out");
+		run(workDir, yamlPath, outDir, { now: FIXED_NOW, log: () => {} });
+		assert.ok(fs.existsSync(path.join(outDir, "covered.md")));
+		assert.ok(!fs.existsSync(path.join(outDir, "ignored.md")));
 	});
 
 	it("propagates errors from a required transformation that matches nothing", () => {
@@ -273,6 +211,67 @@ files:
 			"[README.md] applied: file-specific",
 			`[README.md] wrote transformed document to ${path.join(workDir, "out/out.md")}`,
 		]);
+	});
+
+	it("writes a generated nav.json when the nav block is set", () => {
+		write("docs/overview.md", "body\n");
+		write("docs/access-control.md", "body\n");
+		const yamlPath = write(
+			"transformations.yaml",
+			`
+nav:
+  target: dash0/miscellaneous/glossary/nav.json
+  order: 74
+  id: glossary
+  parentPath: Miscellaneous
+  title: Glossary
+files:
+  - source: docs/overview.md
+    target: dash0/miscellaneous/glossary/overview.md
+    title: About the Glossary
+    description: D
+  - source: docs/access-control.md
+    target: dash0/miscellaneous/glossary/access-control.md
+    title: Access Control
+    description: D
+`,
+		);
+		const outDir = path.join(workDir, "out");
+		run(workDir, yamlPath, outDir, { now: FIXED_NOW, log: () => {} });
+
+		const navPath = path.join(outDir, "dash0/miscellaneous/glossary/nav.json");
+		const nav = JSON.parse(fs.readFileSync(navPath, "utf-8"));
+		assert.deepEqual(nav, {
+			order: 74,
+			id: "glossary",
+			parentPath: "Miscellaneous",
+			items: [
+				{
+					title: "Glossary",
+					children: [
+						{ title: "About the Glossary", path: "dash0/miscellaneous/glossary/overview.md" },
+						{ title: "Access Control", path: "dash0/miscellaneous/glossary/access-control.md" },
+					],
+				},
+			],
+		});
+	});
+
+	it("does not emit nav.json when the nav block is absent", () => {
+		write("README.md", "body\n");
+		const yamlPath = write(
+			"transformations.yaml",
+			`
+files:
+  - source: README.md
+    target: overview.md
+    title: T
+    description: D
+`,
+		);
+		const outDir = path.join(workDir, "out");
+		run(workDir, yamlPath, outDir, { now: FIXED_NOW, log: () => {} });
+		assert.ok(!fs.existsSync(path.join(outDir, "nav.json")));
 	});
 });
 

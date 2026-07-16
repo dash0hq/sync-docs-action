@@ -48,9 +48,31 @@ export interface FileEntry {
 	transformations?: Transformation[];
 }
 
+export interface NavConfig {
+	target: string;
+	order: number;
+	id: string;
+	parentPath?: string;
+	title: string;
+}
+
+export interface NavItem {
+	title: string;
+	path?: string;
+	children?: NavItem[];
+}
+
+export interface NavFile {
+	order: number;
+	id: string;
+	parentPath?: string;
+	items: NavItem[];
+}
+
 export interface Config {
 	common: Transformation[];
 	files: FileEntry[];
+	nav?: NavConfig;
 }
 
 export interface Placeholders {
@@ -91,7 +113,38 @@ export function parseConfig(yamlText: string): Config {
 	}
 	const files: FileEntry[] = filesRaw.map((entry, i) => validateFileEntry(entry, `files[${i}]`));
 
-	return { common, files };
+	const nav = validateNavConfig(obj["nav"]);
+
+	return { common, files, ...(nav !== undefined ? { nav } : {}) };
+}
+
+function validateNavConfig(raw: unknown): NavConfig | undefined {
+	if (raw === undefined) return undefined;
+	if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+		throw new Error("'nav' in transformations.yaml must be a mapping");
+	}
+	const obj = raw as Record<string, unknown>;
+	const target = requireString(obj, "target", "nav");
+	const id = requireString(obj, "id", "nav");
+	const title = requireString(obj, "title", "nav");
+	const orderRaw = obj["order"];
+	if (typeof orderRaw !== "number" || !Number.isFinite(orderRaw)) {
+		throw new Error("nav.order must be a finite number");
+	}
+	const parentPathRaw = obj["parentPath"];
+	if (
+		parentPathRaw !== undefined &&
+		(typeof parentPathRaw !== "string" || parentPathRaw.length === 0)
+	) {
+		throw new Error("nav.parentPath, when present, must be a non-empty string");
+	}
+	return {
+		target,
+		id,
+		title,
+		order: orderRaw,
+		...(parentPathRaw !== undefined ? { parentPath: parentPathRaw as string } : {}),
+	};
 }
 
 function validateFileEntry(raw: unknown, path: string): FileEntry {
@@ -476,6 +529,32 @@ export function prependFrontmatter(
 		{ lineWidth: 0 },
 	);
 	return `---\n${body}---\n${content.replace(/^\n+/, "")}`;
+}
+
+// ---------------------------------------------------------------------------
+// Nav.json generation
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a `nav.json` document from the file entries the sync produces.
+ *
+ * Generates a single top-level group (`items[0]`) titled `navConfig.title`, whose `children` are one
+ * `{ title, path }` entry per file entry, in the order the files are declared. Each child's `title`
+ * comes from the file entry's `title` and its `path` from the file entry's `target` (the same value
+ * used by `dash0-website`'s content path resolver).
+ *
+ * The function is pure: it does no I/O and does not mutate its inputs. The caller is responsible for
+ * serialising the result to JSON and writing it to disk.
+ */
+export function generateNav(navConfig: NavConfig, files: FileEntry[]): NavFile {
+	const children: NavItem[] = files.map((f) => ({ title: f.title, path: f.target }));
+	const group: NavItem = { title: navConfig.title, children };
+	return {
+		order: navConfig.order,
+		id: navConfig.id,
+		...(navConfig.parentPath !== undefined ? { parentPath: navConfig.parentPath } : {}),
+		items: [group],
+	};
 }
 
 // ---------------------------------------------------------------------------

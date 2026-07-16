@@ -28,6 +28,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
 	buildPlaceholders,
+	generateNav,
 	parseConfig,
 	transformContent,
 	type Config,
@@ -48,46 +49,18 @@ export function run(
 	const yamlText = fs.readFileSync(transformationsPath, "utf-8");
 	const config = parseConfig(yamlText);
 
-	checkAllDocsCovered(sourceRoot, config.files);
-
 	const placeholders = buildPlaceholders(options.now);
 
 	for (const fileEntry of config.files) {
 		processFile(fileEntry, config, sourceRoot, outputDir, placeholders, log);
 	}
-}
 
-/**
- * Fail if a `*.md` file directly under `<sourceRoot>/docs` is not declared in `files`. Guards
- * against new topic files being silently omitted from the sync. Dotfiles (e.g.
- * `.docs-structure.md`) are intentionally ignored, as they are documentation metadata rather than
- * pages. For repositories without a docs/ directory, this check is skipped.
- */
-export function checkAllDocsCovered(sourceRoot: string, files: FileEntry[]): void {
-	const docsDir = path.join(sourceRoot, "docs");
-	let entries: string[];
-	try {
-		const stat = fs.statSync(docsDir);
-		if (!stat.isDirectory()) return;
-		entries = fs.readdirSync(docsDir);
-	} catch (err: unknown) {
-		if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
-		throw err;
-	}
-
-	const declared = new Set(files.map((entry) => entry.source));
-	const missing: string[] = [];
-	for (const name of entries.sort()) {
-		if (!name.endsWith(".md")) continue;
-		if (name.startsWith(".")) continue;
-		const source = `docs/${name}`;
-		if (!declared.has(source)) missing.push(source);
-	}
-
-	if (missing.length > 0) {
-		throw new Error(
-			`these docs files are not declared in transformations.yaml: ${missing.join(", ")}`,
-		);
+	if (config.nav !== undefined) {
+		const nav = generateNav(config.nav, config.files);
+		const navPath = path.join(outputDir, config.nav.target);
+		fs.mkdirSync(path.dirname(navPath), { recursive: true });
+		fs.writeFileSync(navPath, JSON.stringify(nav, null, 2) + "\n");
+		log(`wrote generated nav.json to ${navPath}`);
 	}
 }
 

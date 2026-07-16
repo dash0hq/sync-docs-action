@@ -9,8 +9,7 @@ The composite action invokes it via `node packages/transformation-engine/src/app
   Types, config parsing, individual transformation application, link rewrites, frontmatter generation, and the full per-file pipeline (`transformContent`).
   Every function is testable in isolation without touching the filesystem.
 - `src/apply-transformations.ts` — **CLI + I/O**.
-  Parses `argv`, reads the YAML, walks the source tree, invokes `transformContent`, writes the outputs.
-  Also enforces the "every `docs/*.md` in the source must be declared in `transformations.yaml`" invariant.
+  Parses `argv`, reads the YAML, walks the source tree, invokes `transformContent`, writes the outputs, and (when configured) writes a generated `nav.json`.
 
 The split matters: it lets the pipeline be exercised end-to-end from tests without a filesystem, and it keeps I/O concerns in one place.
 
@@ -34,6 +33,7 @@ files:
 - `common` — optional list applied to every file, in order, before file-specific ones.
 - `files` — required non-empty list. Each entry declares one output page.
   `source` is relative to the source root; `target` is relative to `target-directory` in the docs repo.
+  `files` is the sole opt-in list: any file in the source repo that is not declared here is ignored by the sync.
 - `title`, `description` — rendered into the emitted frontmatter.
 - `transformations` (per file) — optional list applied after `common`, in order.
 
@@ -79,6 +79,38 @@ lastUpdated: <ISO 8601 UTC timestamp>
 
 Values are serialised through the `yaml` library's `stringify` (with `lineWidth: 0`), so titles containing colons, `#`, `?`, `-`, embedded newlines, or double quotes are quoted or block-scalared correctly.
 This behavior is covered by round-trip tests: emit → parse → assert equality with the input.
+
+## Nav.json generation
+
+Add an optional top-level `nav` block to `transformations.yaml` to generate a `nav.json` alongside the synced pages:
+
+```yaml
+nav:
+  target: dash0/miscellaneous/glossary/nav.json
+  order: 74
+  id: glossary
+  parentPath: Miscellaneous
+  title: Glossary
+files:
+  - source: docs/overview.md
+    target: dash0/miscellaneous/glossary/overview.md
+    title: About the Glossary
+    description: One-line frontmatter description.
+```
+
+Fields:
+
+- `target` — output path for the nav.json, relative to `target-directory` in the target repo.
+- `order` — number used by `dash0-website` to sort sections.
+- `id` — stable identifier for the section (matches `dash0-website`'s existing nav.json convention).
+- `parentPath` — optional; parent section title shown in the nav breadcrumb.
+- `title` — the section title rendered as `items[0].title`.
+
+The generator emits a single group under `items[0]` whose `children` are `{ title, path }` entries, one per file in `files`, in declared order.
+Each child's `title` comes from that file's `title`; its `path` is the file's `target`.
+
+This produces the same shape used across `dash0-website` (`items[0]` with a `title` and a `children` list of `{ title, path }` leaves).
+For more complex nav trees (nested groups, hand-authored `children`), continue to maintain the `nav.json` by hand — the engine intentionally only covers the flat-group case that source-repo syncs need.
 
 ## Extension points
 
