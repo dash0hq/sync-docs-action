@@ -792,6 +792,47 @@ files:
 `;
 		assert.throws(() => parseConfig(yaml), /nav\.parentPath.*non-empty/);
 	});
+
+	it("parses a nav.groupTitles mapping", () => {
+		const yaml = `
+nav:
+  target: nav.json
+  order: 1
+  id: x
+  title: X
+  groupTitles:
+    github-actions: GitHub Actions
+    advanced: Advanced Topics
+files:
+  - source: README.md
+    target: a/b.md
+    title: T
+    description: D
+`;
+		const cfg = parseConfig(yaml);
+		assert.deepEqual(cfg.nav?.groupTitles, {
+			"github-actions": "GitHub Actions",
+			advanced: "Advanced Topics",
+		});
+	});
+
+	it("rejects a nav.groupTitles value that is not a non-empty string", () => {
+		const yaml = `
+nav:
+  target: nav.json
+  order: 1
+  id: x
+  title: X
+  groupTitles:
+    github-actions: ""
+files:
+  - source: README.md
+    target: a/b.md
+    title: T
+    description: D
+`;
+		assert.throws(() => parseConfig(yaml), /nav\.groupTitles.*non-empty/);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -850,5 +891,143 @@ describe("generateNav", () => {
 		const nav = generateNav(navConfig, files);
 		const titles = nav.items[0]?.children?.map((c) => c.title);
 		assert.deepEqual(titles, ["Z", "A", "M"]);
+	});
+
+	it("stays flat when every file shares the same directory (v0.2.0 compatibility)", () => {
+		const files: FileEntry[] = [
+			fileEntry({ target: "dash0-cli/about.md", title: "About" }),
+			fileEntry({ target: "dash0-cli/installation.md", title: "Installation" }),
+		];
+		const nav = generateNav(navConfig, files);
+		assert.deepEqual(nav.items[0]?.children, [
+			{ title: "About", path: "dash0-cli/about.md" },
+			{ title: "Installation", path: "dash0-cli/installation.md" },
+		]);
+	});
+
+	it("groups files that sit in a subdirectory below the common prefix", () => {
+		const cfg: NavConfig = {
+			target: "dash0-cli/nav.json",
+			order: 72.6,
+			id: "dash0-cli",
+			parentPath: "Tooling",
+			title: "Dash0 CLI",
+			groupTitles: { "github-actions": "GitHub Actions" },
+		};
+		const files: FileEntry[] = [
+			fileEntry({ target: "dash0-cli/about.md", title: "About the Dash0 CLI" }),
+			fileEntry({ target: "dash0-cli/commands.md", title: "Command Reference" }),
+			fileEntry({
+				target: "dash0-cli/github-actions/about.md",
+				title: "About GitHub Actions",
+			}),
+			fileEntry({
+				target: "dash0-cli/github-actions/setup.md",
+				title: "Setup Dash0 CLI",
+			}),
+			fileEntry({ target: "dash0-cli/homebrew.md", title: "Homebrew" }),
+		];
+		const nav = generateNav(cfg, files);
+		assert.deepEqual(nav.items[0]?.children, [
+			{ title: "About the Dash0 CLI", path: "dash0-cli/about.md" },
+			{ title: "Command Reference", path: "dash0-cli/commands.md" },
+			{
+				title: "GitHub Actions",
+				children: [
+					{ title: "About GitHub Actions", path: "dash0-cli/github-actions/about.md" },
+					{ title: "Setup Dash0 CLI", path: "dash0-cli/github-actions/setup.md" },
+				],
+			},
+			{ title: "Homebrew", path: "dash0-cli/homebrew.md" },
+		]);
+	});
+
+	it("falls back to the directory slug as the group title when no mapping is set", () => {
+		const files: FileEntry[] = [
+			fileEntry({ target: "a/root.md", title: "Root" }),
+			fileEntry({ target: "a/nested/leaf.md", title: "Leaf" }),
+		];
+		const nav = generateNav(navConfig, files);
+		assert.deepEqual(nav.items[0]?.children, [
+			{ title: "Root", path: "a/root.md" },
+			{
+				title: "nested",
+				children: [{ title: "Leaf", path: "a/nested/leaf.md" }],
+			},
+		]);
+	});
+
+	it("supports arbitrary nesting depth", () => {
+		const cfg: NavConfig = {
+			target: "nav.json",
+			order: 1,
+			id: "x",
+			title: "X",
+			groupTitles: { l1: "Level 1", l2: "Level 2", l3: "Level 3" },
+		};
+		const files: FileEntry[] = [
+			fileEntry({ target: "root/top.md", title: "Top" }),
+			fileEntry({ target: "root/l1/one.md", title: "One" }),
+			fileEntry({ target: "root/l1/l2/two.md", title: "Two" }),
+			fileEntry({ target: "root/l1/l2/l3/three.md", title: "Three" }),
+		];
+		const nav = generateNav(cfg, files);
+		assert.deepEqual(nav.items[0]?.children, [
+			{ title: "Top", path: "root/top.md" },
+			{
+				title: "Level 1",
+				children: [
+					{ title: "One", path: "root/l1/one.md" },
+					{
+						title: "Level 2",
+						children: [
+							{ title: "Two", path: "root/l1/l2/two.md" },
+							{
+								title: "Level 3",
+								children: [{ title: "Three", path: "root/l1/l2/l3/three.md" }],
+							},
+						],
+					},
+				],
+			},
+		]);
+	});
+
+	it("reuses an existing group when a later file references the same subdirectory", () => {
+		const cfg: NavConfig = {
+			target: "nav.json",
+			order: 1,
+			id: "x",
+			title: "X",
+			groupTitles: { sub: "Sub" },
+		};
+		const files: FileEntry[] = [
+			fileEntry({ target: "root/sub/a.md", title: "A" }),
+			fileEntry({ target: "root/top.md", title: "Top" }),
+			fileEntry({ target: "root/sub/b.md", title: "B" }),
+		];
+		const nav = generateNav(cfg, files);
+		assert.deepEqual(nav.items[0]?.children, [
+			{
+				title: "Sub",
+				children: [
+					{ title: "A", path: "root/sub/a.md" },
+					{ title: "B", path: "root/sub/b.md" },
+				],
+			},
+			{ title: "Top", path: "root/top.md" },
+		]);
+	});
+
+	it("does not treat partial-segment overlap between siblings as a common prefix", () => {
+		const files: FileEntry[] = [
+			fileEntry({ target: "foo-a/page.md", title: "A" }),
+			fileEntry({ target: "foo-b/page.md", title: "B" }),
+		];
+		const nav = generateNav(navConfig, files);
+		assert.deepEqual(nav.items[0]?.children, [
+			{ title: "foo-a", children: [{ title: "A", path: "foo-a/page.md" }] },
+			{ title: "foo-b", children: [{ title: "B", path: "foo-b/page.md" }] },
+		]);
 	});
 });

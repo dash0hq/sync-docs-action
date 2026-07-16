@@ -54,6 +54,13 @@ export interface NavConfig {
 	id: string;
 	parentPath?: string;
 	title: string;
+	/**
+	 * Optional mapping from directory slug (a path segment in a file's `target`) to display title.
+	 * When files land in subdirectories below the common prefix of all `target`s, those
+	 * subdirectories become nested groups in the emitted nav tree. This map controls each group's
+	 * displayed title; any directory slug not listed here falls back to using the slug itself.
+	 */
+	groupTitles?: Record<string, string>;
 }
 
 export interface NavItem {
@@ -138,13 +145,31 @@ function validateNavConfig(raw: unknown): NavConfig | undefined {
 	) {
 		throw new Error("nav.parentPath, when present, must be a non-empty string");
 	}
+	const groupTitles = validateGroupTitles(obj["groupTitles"]);
 	return {
 		target,
 		id,
 		title,
 		order: orderRaw,
 		...(parentPathRaw !== undefined ? { parentPath: parentPathRaw as string } : {}),
+		...(groupTitles !== undefined ? { groupTitles } : {}),
 	};
+}
+
+function validateGroupTitles(raw: unknown): Record<string, string> | undefined {
+	if (raw === undefined) return undefined;
+	if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+		throw new Error("nav.groupTitles, when present, must be a mapping of directory slug to string");
+	}
+	const obj = raw as Record<string, unknown>;
+	const out: Record<string, string> = {};
+	for (const [slug, value] of Object.entries(obj)) {
+		if (typeof value !== "string" || value.length === 0) {
+			throw new Error(`nav.groupTitles[${JSON.stringify(slug)}] must be a non-empty string`);
+		}
+		out[slug] = value;
+	}
+	return out;
 }
 
 function validateFileEntry(raw: unknown, path: string): FileEntry {
@@ -538,23 +563,90 @@ export function prependFrontmatter(
 /**
  * Build a `nav.json` document from the file entries the sync produces.
  *
- * Generates a single top-level group (`items[0]`) titled `navConfig.title`, whose `children` are one
- * `{ title, path }` entry per file entry, in the order the files are declared. Each child's `title`
- * comes from the file entry's `title` and its `path` from the file entry's `target` (the same value
- * used by `dash0-website`'s content path resolver).
+ * Emits a single top-level group (`items[0]`) titled `navConfig.title`. The group's `children` mirror
+ * the on-disk hierarchy implied by each file's `target` path: files that share the common directory
+ * prefix appear as leaves at the top of the group, and files that sit in a deeper subdirectory are
+ * nested inside a group node whose title is looked up in `navConfig.groupTitles` (falling back to the
+ * directory slug itself when no mapping is provided). Nesting is arbitrary — every additional
+ * directory segment produces another group level.
+ *
+ * When every file shares the same directory (no subdirectories below the common prefix), the output
+ * is a flat one-level tree that matches the v0.2.0 shape.
+ *
+ * File order is preserved: leaves appear in the order the files were declared, and each new group
+ * is inserted at the position of the first file that references it. Each leaf's `title` comes from
+ * the file entry's `title` and its `path` from the file entry's `target` (the same value used by
+ * `dash0-website`'s content path resolver).
  *
  * The function is pure: it does no I/O and does not mutate its inputs. The caller is responsible for
  * serialising the result to JSON and writing it to disk.
  */
 export function generateNav(navConfig: NavConfig, files: FileEntry[]): NavFile {
-	const children: NavItem[] = files.map((f) => ({ title: f.title, path: f.target }));
-	const group: NavItem = { title: navConfig.title, children };
+	const groupTitles = navConfig.groupTitles ?? {};
+	const prefix = commonDirPrefix(files.map((f) => f.target));
+
+	const rootChildren: NavItem[] = [];
+	// For each in-flight `NavItem[]` (a group's `children` array, or the root array), we need a fast
+	// way to find the group node already inserted for a given directory slug so a later file with the
+	// same slug lands in the same group. WeakMap keeps the lookup index tied to the array identity
+	// without leaking outside this function.
+	const groupIndex = new WeakMap<NavItem[], Map<string, NavItem>>();
+	groupIndex.set(rootChildren, new Map());
+
+	for (const file of files) {
+		const rel = stripDirPrefix(file.target, prefix);
+		const segments = rel.split("/");
+		let siblings = rootChildren;
+		for (let i = 0; i < segments.length - 1; i++) {
+			const slug = segments[i]!;
+			const index = groupIndex.get(siblings)!;
+			let group = index.get(slug);
+			if (group === undefined) {
+				group = { title: groupTitles[slug] ?? slug, children: [] };
+				siblings.push(group);
+				index.set(slug, group);
+				groupIndex.set(group.children!, new Map());
+			}
+			siblings = group.children!;
+		}
+		siblings.push({ title: file.title, path: file.target });
+	}
+
+	const group: NavItem = { title: navConfig.title, children: rootChildren };
 	return {
 		order: navConfig.order,
 		id: navConfig.id,
 		...(navConfig.parentPath !== undefined ? { parentPath: navConfig.parentPath } : {}),
 		items: [group],
 	};
+}
+
+/**
+ * Return the longest directory prefix (as a `"a/b/c"` string, no trailing slash) shared by every
+ * target. Operates on `/`-separated segments so a partial-segment overlap (e.g. `foo-x` and `foo-y`
+ * sharing `foo-`) is never treated as a common prefix. The filename segment is intentionally
+ * excluded from consideration so `[a/b/x.md, a/b/y.md]` returns `"a/b"`, not the whole path.
+ */
+function commonDirPrefix(targets: string[]): string {
+	if (targets.length === 0) return "";
+	const dirsList = targets.map((t) => t.split("/").slice(0, -1));
+	const minLen = Math.min(...dirsList.map((d) => d.length));
+	const common: string[] = [];
+	for (let i = 0; i < minLen; i++) {
+		const seg = dirsList[0]![i]!;
+		if (dirsList.every((d) => d[i] === seg)) {
+			common.push(seg);
+		} else {
+			break;
+		}
+	}
+	return common.join("/");
+}
+
+function stripDirPrefix(target: string, prefix: string): string {
+	if (prefix === "") return target;
+	const withSlash = prefix + "/";
+	return target.startsWith(withSlash) ? target.substring(withSlash.length) : target;
 }
 
 // ---------------------------------------------------------------------------
