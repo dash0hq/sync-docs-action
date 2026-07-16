@@ -165,9 +165,7 @@ function validateGroupTitles(raw: unknown): Record<string, string> | undefined {
 	const out: Record<string, string> = {};
 	for (const [slug, value] of Object.entries(obj)) {
 		if (typeof value !== "string" || value.length === 0) {
-			throw new Error(
-				`nav.groupTitles[${JSON.stringify(slug)}] must be a non-empty string`,
-			);
+			throw new Error(`nav.groupTitles[${JSON.stringify(slug)}] must be a non-empty string`);
 		}
 		out[slug] = value;
 	}
