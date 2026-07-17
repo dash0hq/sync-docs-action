@@ -372,3 +372,78 @@ files:
 		);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// run — coverage check
+// ---------------------------------------------------------------------------
+
+describe("run: coverage", () => {
+	const COVERED_YAML = `
+files:
+  - source: README.md
+    target: overview.md
+    title: Overview
+    description: D
+  - source: docs/configuration.md
+    target: configuration.md
+    title: Configuration
+    description: D
+coverage:
+  include:
+    - "docs/*.md"
+`;
+
+	it("passes when every file matching coverage.include has a files entry", () => {
+		write("README.md", "Hello.\n");
+		write("docs/configuration.md", "Configure it.\n");
+		const yamlPath = write("transformations.yaml", COVERED_YAML);
+		const outDir = path.join(workDir, "out");
+
+		run(workDir, yamlPath, outDir, { now: FIXED_NOW });
+
+		assert.ok(fs.existsSync(path.join(outDir, "configuration.md")));
+	});
+
+	it("fails before writing anything when a matching file has no files entry", () => {
+		write("README.md", "Hello.\n");
+		write("docs/configuration.md", "Configure it.\n");
+		write("docs/troubleshooting.md", "New page nobody mapped.\n");
+		const yamlPath = write("transformations.yaml", COVERED_YAML);
+		const outDir = path.join(workDir, "out");
+
+		assert.throws(
+			() => run(workDir, yamlPath, outDir, { now: FIXED_NOW }),
+			/coverage check failed[^]*docs\/troubleshooting\.md/,
+		);
+		assert.ok(!fs.existsSync(outDir), "output directory must not be created on coverage failure");
+	});
+
+	it("allows a matching file to be excluded via coverage.ignore", () => {
+		write("README.md", "Hello.\n");
+		write("docs/configuration.md", "Configure it.\n");
+		write("docs/internal-notes.md", "Not for the website.\n");
+		const yamlPath = write(
+			"transformations.yaml",
+			COVERED_YAML + "  ignore:\n    - docs/internal-notes.md\n",
+		);
+		const outDir = path.join(workDir, "out");
+
+		run(workDir, yamlPath, outDir, { now: FIXED_NOW });
+
+		assert.ok(!fs.existsSync(path.join(outDir, "internal-notes.md")));
+	});
+
+	it("lists every unmapped file in the error message", () => {
+		write("README.md", "Hello.\n");
+		write("docs/configuration.md", "Configure it.\n");
+		write("docs/one.md", "1\n");
+		write("docs/two.md", "2\n");
+		const yamlPath = write("transformations.yaml", COVERED_YAML);
+		const outDir = path.join(workDir, "out");
+
+		assert.throws(
+			() => run(workDir, yamlPath, outDir, { now: FIXED_NOW }),
+			/docs\/one\.md[^]*docs\/two\.md/,
+		);
+	});
+});

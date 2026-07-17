@@ -76,10 +76,25 @@ export interface NavFile {
 	items: NavItem[];
 }
 
+export interface CoverageConfig {
+	/**
+	 * Glob patterns (relative to the source root) selecting the documentation files that must be
+	 * covered by the sync. Every file matching one of these patterns must either appear as a
+	 * `files[].source` or be listed under `ignore`, otherwise the run fails.
+	 */
+	include: string[];
+	/**
+	 * Exact source-relative paths that are intentionally not synced. Listing a file here is the
+	 * visible, reviewable way to exclude it from the coverage requirement.
+	 */
+	ignore: string[];
+}
+
 export interface Config {
 	common: Transformation[];
 	files: FileEntry[];
 	nav?: NavConfig;
+	coverage?: CoverageConfig;
 }
 
 export interface Placeholders {
@@ -121,8 +136,38 @@ export function parseConfig(yamlText: string): Config {
 	const files: FileEntry[] = filesRaw.map((entry, i) => validateFileEntry(entry, `files[${i}]`));
 
 	const nav = validateNavConfig(obj["nav"]);
+	const coverage = validateCoverageConfig(obj["coverage"]);
 
-	return { common, files, ...(nav !== undefined ? { nav } : {}) };
+	return {
+		common,
+		files,
+		...(nav !== undefined ? { nav } : {}),
+		...(coverage !== undefined ? { coverage } : {}),
+	};
+}
+
+function validateCoverageConfig(raw: unknown): CoverageConfig | undefined {
+	if (raw === undefined) return undefined;
+	if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+		throw new Error("'coverage' in transformations.yaml must be a mapping");
+	}
+	const obj = raw as Record<string, unknown>;
+
+	const includeRaw = obj["include"];
+	if (
+		!Array.isArray(includeRaw) ||
+		includeRaw.length === 0 ||
+		!includeRaw.every((p) => typeof p === "string" && p.length > 0)
+	) {
+		throw new Error("coverage.include must be a non-empty list of glob patterns");
+	}
+
+	const ignoreRaw = obj["ignore"] ?? [];
+	if (!Array.isArray(ignoreRaw) || !ignoreRaw.every((p) => typeof p === "string" && p.length > 0)) {
+		throw new Error("coverage.ignore, when present, must be a list of source-relative paths");
+	}
+
+	return { include: includeRaw as string[], ignore: ignoreRaw as string[] };
 }
 
 function validateNavConfig(raw: unknown): NavConfig | undefined {
@@ -245,6 +290,29 @@ function requireString(
 		throw new Error(`${path}.${key} must be a non-empty string`);
 	}
 	return value;
+}
+
+// ---------------------------------------------------------------------------
+// Docs coverage
+// ---------------------------------------------------------------------------
+
+/**
+ * Return the candidate files that are neither declared as a `files[].source` nor listed under
+ * `coverage.ignore`, in sorted order.
+ *
+ * `candidates` is the glob-expanded list of files matching `coverage.include` (the globbing is I/O
+ * and therefore lives in `apply-transformations.ts`); paths are compared literally, so the caller
+ * must normalise them to `/`-separated source-relative form. A non-empty result means the sync
+ * declarations have drifted behind the source docs and the run must fail — this restores the
+ * guard the Python engine used to provide, where adding a docs page without a transformation
+ * entry broke the workflow instead of being silently skipped.
+ */
+export function findUnmappedDocs(candidates: string[], config: Config): string[] {
+	const covered = new Set<string>(config.files.map((f) => f.source));
+	for (const ignored of config.coverage?.ignore ?? []) {
+		covered.add(ignored);
+	}
+	return candidates.filter((candidate) => !covered.has(candidate)).sort();
 }
 
 // ---------------------------------------------------------------------------

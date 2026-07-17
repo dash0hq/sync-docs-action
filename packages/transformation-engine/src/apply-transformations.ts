@@ -28,6 +28,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
 	buildPlaceholders,
+	findUnmappedDocs,
 	generateNav,
 	parseConfig,
 	transformContent,
@@ -49,6 +50,8 @@ export function run(
 	const yamlText = fs.readFileSync(transformationsPath, "utf-8");
 	const config = parseConfig(yamlText);
 
+	checkCoverage(config, sourceRoot);
+
 	const placeholders = buildPlaceholders(options.now);
 
 	for (const fileEntry of config.files) {
@@ -61,6 +64,28 @@ export function run(
 		fs.mkdirSync(path.dirname(navPath), { recursive: true });
 		fs.writeFileSync(navPath, JSON.stringify(nav, null, 2) + "\n");
 		log(`wrote generated nav.json to ${navPath}`);
+	}
+}
+
+/**
+ * Fail the run when a file matching `coverage.include` is neither declared in `files:` nor listed
+ * under `coverage.ignore`. Runs before any transformation so a drifted configuration fails fast.
+ * The glob expansion happens here (I/O); the set arithmetic lives in `findUnmappedDocs`.
+ */
+function checkCoverage(config: Config, sourceRoot: string): void {
+	if (config.coverage === undefined) {
+		return;
+	}
+	const candidates = fs
+		.globSync(config.coverage.include, { cwd: sourceRoot })
+		.map((p) => p.split(path.sep).join("/"));
+	const unmapped = findUnmappedDocs(candidates, config);
+	if (unmapped.length > 0) {
+		throw new Error(
+			`coverage check failed — the following files match coverage.include but have no 'files:' ` +
+				`entry; add one, or list the file under coverage.ignore to exclude it deliberately:\n` +
+				unmapped.map((f) => `  - ${f}`).join("\n"),
+		);
 	}
 }
 

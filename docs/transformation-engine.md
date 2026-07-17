@@ -28,14 +28,23 @@ files:
     description: One-line frontmatter description.
     transformations:
       - <transformation>
+coverage:
+  include:
+    - "docs/*.md"
+  ignore:
+    - docs/internal-notes.md
 ```
 
 - `common` — optional list applied to every file, in order, before file-specific ones.
 - `files` — required non-empty list. Each entry declares one output page.
   `source` is relative to the source root; `target` is relative to `target-directory` in the docs repo.
-  `files` is the sole opt-in list: any file in the source repo that is not declared here is ignored by the sync.
+  `files` is the opt-in list: any file in the source repo that is not declared here is ignored by the sync (unless a `coverage` block makes that an error — see below).
 - `title`, `description` — rendered into the emitted frontmatter.
 - `transformations` (per file) — optional list applied after `common`, in order.
+- `coverage` — optional.
+  When present, the run fails (before any transformation) if a file matching one of the `include` globs (resolved relative to the source root) neither appears as a `files[].source` nor is listed under `ignore`.
+  Use it so a newly added docs page breaks CI instead of being silently skipped; `ignore` is the explicit, reviewable way to exclude a page from the sync.
+  Without a `coverage` block, `files:` is pure opt-in and undeclared files are ignored without notice.
 
 ### Transformation types
 

@@ -13,6 +13,7 @@ import {
 	compileRegex,
 	describeTransformation,
 	expandTemplate,
+	findUnmappedDocs,
 	generateNav,
 	parseConfig,
 	prependFrontmatter,
@@ -1029,5 +1030,139 @@ describe("generateNav", () => {
 			{ title: "foo-a", children: [{ title: "A", path: "foo-a/page.md" }] },
 			{ title: "foo-b", children: [{ title: "B", path: "foo-b/page.md" }] },
 		]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseConfig — coverage block
+// ---------------------------------------------------------------------------
+
+describe("parseConfig: coverage", () => {
+	it("parses a coverage block with include and ignore", () => {
+		const yaml = `
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+coverage:
+  include:
+    - "docs/*.md"
+  ignore:
+    - docs/internal-notes.md
+`;
+		const cfg = parseConfig(yaml);
+		assert.deepEqual(cfg.coverage, {
+			include: ["docs/*.md"],
+			ignore: ["docs/internal-notes.md"],
+		});
+	});
+
+	it("defaults ignore to an empty list", () => {
+		const yaml = `
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+coverage:
+  include: ["docs/*.md"]
+`;
+		const cfg = parseConfig(yaml);
+		assert.deepEqual(cfg.coverage, { include: ["docs/*.md"], ignore: [] });
+	});
+
+	it("leaves coverage undefined when the block is absent", () => {
+		const cfg = parseConfig(
+			"files:\n  - source: README.md\n    target: out.md\n    title: T\n    description: D\n",
+		);
+		assert.equal(cfg.coverage, undefined);
+	});
+
+	it("rejects a non-mapping coverage block", () => {
+		const yaml = `
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+coverage: ["docs/*.md"]
+`;
+		assert.throws(() => parseConfig(yaml), /'coverage' in transformations.yaml must be a mapping/);
+	});
+
+	it("rejects a coverage block without include patterns", () => {
+		const yaml = `
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+coverage:
+  ignore: [docs/foo.md]
+`;
+		assert.throws(() => parseConfig(yaml), /coverage.include must be a non-empty list/);
+	});
+
+	it("rejects an empty include list", () => {
+		const yaml = `
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+coverage:
+  include: []
+`;
+		assert.throws(() => parseConfig(yaml), /coverage.include must be a non-empty list/);
+	});
+
+	it("rejects non-string ignore entries", () => {
+		const yaml = `
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+coverage:
+  include: ["docs/*.md"]
+  ignore: [42]
+`;
+		assert.throws(() => parseConfig(yaml), /coverage.ignore, when present, must be a list/);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// findUnmappedDocs
+// ---------------------------------------------------------------------------
+
+describe("findUnmappedDocs", () => {
+	function config(sources: string[], ignore: string[] = []) {
+		return {
+			common: [],
+			files: sources.map((source) => fileEntry({ source })),
+			coverage: { include: ["docs/*.md"], ignore },
+		};
+	}
+
+	it("returns candidates that are neither declared nor ignored, sorted", () => {
+		const cfg = config(["docs/a.md"]);
+		const unmapped = findUnmappedDocs(["docs/c.md", "docs/a.md", "docs/b.md"], cfg);
+		assert.deepEqual(unmapped, ["docs/b.md", "docs/c.md"]);
+	});
+
+	it("returns an empty list when every candidate is declared", () => {
+		const cfg = config(["docs/a.md", "docs/b.md"]);
+		assert.deepEqual(findUnmappedDocs(["docs/a.md", "docs/b.md"], cfg), []);
+	});
+
+	it("treats ignored files as covered", () => {
+		const cfg = config(["docs/a.md"], ["docs/skipped.md"]);
+		assert.deepEqual(findUnmappedDocs(["docs/a.md", "docs/skipped.md"], cfg), []);
+	});
+
+	it("treats a config without a coverage block as having no ignores", () => {
+		const cfg = { common: [], files: [fileEntry({ source: "docs/a.md" })] };
+		assert.deepEqual(findUnmappedDocs(["docs/a.md", "docs/b.md"], cfg), ["docs/b.md"]);
 	});
 });
