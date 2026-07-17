@@ -18,6 +18,9 @@ description: >-
 #   - a transformations.yaml file within its repo
 #   - a fine-grained PAT scoped to the target documentation repository, with
 #     `contents:write` (push the branch) and `pull-requests:write` (open the PR).
+#
+# With `dry-run: "true"` the action stops after the transformation step, so only the
+# transformations.yaml is needed — no token, no target coordinates.
 
 inputs:
   source-root:
@@ -31,34 +34,71 @@ inputs:
       Path (relative to source-root) to the transformations.yaml file describing the sync.
     required: false
     default: ".github/workflows/sync-docs/transformations.yaml"
-  target-repository:
-    description: The owner/name of the documentation repository the sync writes into.
+  dry-run:
+    description: >-
+      When "true", stop after applying the transformations (including the coverage check, when the
+      transformations file declares one): the target repository is not checked out, nothing is
+      copied, and no commit or pull request is created. Use this to detect docs drift early on
+      non-release builds. Dry runs need none of the target-side inputs, so they also work in
+      contexts where no token is available.
     required: false
-    default: dash0hq/dash0-website
+    default: "false"
+  target-repository:
+    description: >-
+      The owner/name of the documentation repository the sync writes into. Callers should supply
+      this from a repository secret or variable rather than hardcoding it in a public workflow
+      file. Required unless dry-run is "true".
+    required: false
+    default: ""
   target-directory:
     description: >-
       Path (relative to the target repository root) that receives the transformed files. This is where
-      the transformations' `target` paths are resolved from.
+      the transformations' `target` paths are resolved from. Callers should supply this from a
+      repository secret or variable rather than hardcoding it in a public workflow file. Required
+      unless dry-run is "true".
     required: false
-    default: src/app/(core)/docs/content
+    default: ""
   target-github-token:
     description: >-
       Token used to push the sync branch and open the pull request in the target repository.
       Must have `contents:write` and `pull-requests:write` on the target repository.
-    required: true
+      Required unless dry-run is "true".
+    required: false
+    default: ""
   target-base-branch:
     description: Branch in the target repository the pull request is opened against.
     required: false
     default: main
   pr-branch:
-    description: Branch name used for the sync pull request in the target repository.
-    required: true
+    description: >-
+      Branch name used for the sync pull request in the target repository.
+      Required unless dry-run is "true".
+    required: false
+    default: ""
   pr-title:
-    description: Title of the pull request opened against the target repository.
-    required: true
+    description: >-
+      Title of the pull request opened against the target repository.
+      Required unless dry-run is "true".
+    required: false
+    default: ""
   pr-body:
-    description: Body of the pull request opened against the target repository.
-    required: true
+    description: >-
+      Body of the pull request opened against the target repository.
+      Required unless dry-run is "true".
+    required: false
+    default: ""
+  pr-reviewers:
+    description: >-
+      Comma-separated GitHub handles (users or org/team slugs) requested as reviewers on a newly
+      opened pull request. Ignored when an open pull request for pr-branch already exists.
+    required: false
+    default: ""
+  pr-assignees:
+    description: >-
+      Comma-separated GitHub handles assigned to a newly opened pull request. Ignored when an open
+      pull request for pr-branch already exists.
+    required: false
+    default: ""
   commit-message:
     description: Commit message used when the sync produces changes.
     required: false
@@ -67,6 +107,32 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: validate inputs
+      # `required: true` in action metadata is not enforced at runtime for composite actions, and
+      # which inputs are mandatory depends on dry-run, so the check happens here — before any setup
+      # work — to fail with a clear message instead of a confusing downstream git/gh error.
+      if: inputs.dry-run != 'true'
+      shell: bash
+      env:
+        TARGET_REPOSITORY: ${{ inputs.target-repository }}
+        TARGET_DIRECTORY: ${{ inputs.target-directory }}
+        TARGET_GITHUB_TOKEN: ${{ inputs.target-github-token }}
+        PR_BRANCH: ${{ inputs.pr-branch }}
+        PR_TITLE: ${{ inputs.pr-title }}
+        PR_BODY: ${{ inputs.pr-body }}
+      run: |
+        missing=""
+        [ -n "${TARGET_REPOSITORY}" ] || missing="${missing} target-repository"
+        [ -n "${TARGET_DIRECTORY}" ] || missing="${missing} target-directory"
+        [ -n "${TARGET_GITHUB_TOKEN}" ] || missing="${missing} target-github-token"
+        [ -n "${PR_BRANCH}" ] || missing="${missing} pr-branch"
+        [ -n "${PR_TITLE}" ] || missing="${missing} pr-title"
+        [ -n "${PR_BODY}" ] || missing="${missing} pr-body"
+        if [ -n "${missing}" ]; then
+          echo "::error::The following inputs are required unless dry-run is 'true':${missing}"
+          exit 1
+        fi
+
     - name: Read required Node.js version from the action's .nvmrc
       id: node-version
       shell: bash
@@ -116,6 +182,7 @@ runs:
           "${RUNNER_TEMP}/transformed-docs"
 
     - name: checkout target repository
+      if: inputs.dry-run != 'true'
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         repository: ${{ inputs.target-repository }}
@@ -124,6 +191,7 @@ runs:
         path: .sync-docs-target-repository
 
     - name: copy transformed docs
+      if: inputs.dry-run != 'true'
       shell: bash
       env:
         TARGET_DIRECTORY: ${{ inputs.target-directory }}
@@ -133,6 +201,7 @@ runs:
         cp -R "${RUNNER_TEMP}/transformed-docs/." "${target_path}/"
 
     - name: create pull request in target repository
+      if: inputs.dry-run != 'true'
       shell: bash
       working-directory: .sync-docs-target-repository
       env:
@@ -142,6 +211,8 @@ runs:
         PR_BRANCH: ${{ inputs.pr-branch }}
         PR_TITLE: ${{ inputs.pr-title }}
         PR_BODY: ${{ inputs.pr-body }}
+        PR_REVIEWERS: ${{ inputs.pr-reviewers }}
+        PR_ASSIGNEES: ${{ inputs.pr-assignees }}
         COMMIT_MESSAGE: ${{ inputs.commit-message }}
       run: |
         commit_message="${COMMIT_MESSAGE}"
@@ -171,11 +242,19 @@ runs:
         # Only open a new PR if there is no open one for this branch yet (otherwise the force-push
         # above already updated the existing PR).
         if [ -z "$(gh pr list --head "${PR_BRANCH}" --state open --json number --jq '.[].number')" ]; then
+          extra_args=()
+          if [ -n "${PR_REVIEWERS}" ]; then
+            extra_args+=(--reviewer "${PR_REVIEWERS}")
+          fi
+          if [ -n "${PR_ASSIGNEES}" ]; then
+            extra_args+=(--assignee "${PR_ASSIGNEES}")
+          fi
           gh pr create \
             --base "${TARGET_BASE_BRANCH}" \
             --head "${PR_BRANCH}" \
             --title "${PR_TITLE}" \
-            --body "${PR_BODY}"
+            --body "${PR_BODY}" \
+            "${extra_args[@]}"
         else
           echo "An open pull request for branch ${PR_BRANCH} already exists, it was updated by the force-push above."
         fi
