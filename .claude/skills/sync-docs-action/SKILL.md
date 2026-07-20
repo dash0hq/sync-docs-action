@@ -24,6 +24,34 @@ This skill is a set of workflows. Identify the task, then follow the matching wo
 - **Migrating a caller to a newer action version** → Workflow D.
 - **Diagnosing a failing run** → Workflow E.
 
+## Reference: two worked examples in production
+
+Two Dash0 repos already consume this action. Read them before wiring or editing a caller — they are the
+canonical, working shapes to copy from.
+
+- **`dash0hq/dash0-operator`** — a **flat sync** (all pages land as siblings under one directory) with a
+  `coverage:` guard, pinned past the breaking release so it passes the target inputs from secrets.
+  - [`.github/workflows/sync-docs-to-website.yaml`](https://github.com/dash0hq/dash0-operator/blob/main/.github/workflows/sync-docs-to-website.yaml)
+    — the caller workflow, one invocation for both modes.
+  - [`.github/workflows/ci.yaml`](https://github.com/dash0hq/dash0-operator/blob/main/.github/workflows/ci.yaml)
+    — how CI invokes it: the `sync_docs_to_website_dry_run` job runs `dry-run: true` on every non-tag
+    build, and `sync_docs_to_website` runs the full sync only after a release tag publishes.
+  - [`.github/workflows/sync-docs/transformations.yaml`](https://github.com/dash0hq/dash0-operator/blob/main/.github/workflows/sync-docs/transformations.yaml)
+    — `common` + per-file `transformations`, a `coverage:` block, no `nav:`.
+- **`dash0hq/dash0-cli`** — a **nested-nav sync** that groups pages sitting in a `github-actions/`
+  subdirectory via `nav.groupTitles`. Still pinned to `v0.3.0`, so it is also a live example of a caller
+  that has **not yet done the D1 migration** (its target coordinates still rely on the old defaults).
+  - [`.github/workflows/sync-docs-to-website.yaml`](https://github.com/dash0hq/dash0-cli/blob/main/.github/workflows/sync-docs-to-website.yaml)
+    — the caller workflow.
+  - [`.github/workflows/sync-docs/transformations.yaml`](https://github.com/dash0hq/dash0-cli/blob/main/.github/workflows/sync-docs/transformations.yaml)
+    — a `nav:` block with `groupTitles`, files nesting into `github-actions/`.
+
+These two repos deliberately differ in details you must not copy blindly. The operator names its PAT
+secret `DASH0_DOCS_REPO_GITHUB_PAT`; the CLI uses `DOCS_WEBSITE_PR_TOKEN`. The operator keeps its
+`transformations.yaml` at the repo-root `.github/` while syncing from `source-root:
+helm-chart/dash0-operator`, so its `transformations-file` steps back up with `../../`. Match the
+caller's own conventions, not the other repo's.
+
 ## Reference: the two modes
 
 - **Dry run** (`dry-run: "true"`): applies the transformations and the coverage check, then **stops**.
@@ -73,7 +101,11 @@ Follow these steps in order. Do not skip the dry-run verification (step 6) befor
    `SYNC_DOCUMENTATION_TARGET_DIRECTORY`, and a `contents:write` + `pull-requests:write` PAT. If they do
    not exist, tell the user which secrets to create and stop the full-sync wiring until they do.
 5. **Add the workflow file** at `.github/workflows/sync-docs.yml` using the template below. One
-   invocation serves both modes; `dry-run` decides.
+   invocation serves both modes; `dry-run` decides. For a real end-to-end example including the CI
+   wiring, copy from
+   [dash0-operator's `sync-docs-to-website.yaml`](https://github.com/dash0hq/dash0-operator/blob/main/.github/workflows/sync-docs-to-website.yaml)
+   and the `sync_docs_to_website*` jobs in its
+   [`ci.yaml`](https://github.com/dash0hq/dash0-operator/blob/main/.github/workflows/ci.yaml).
 
    ```yaml
    name: Synchronize docs to the Dash0 website
@@ -145,6 +177,11 @@ prepended, so do not hand-write frontmatter in the source docs.
    `ignore`.
 4. **Add a `nav:` block** only if the target section needs a generated `nav.json`.
 5. **Verify with Workflow C** after any edit.
+
+For a flat sync with a `coverage:` guard, copy from
+[dash0-operator's `transformations.yaml`](https://github.com/dash0hq/dash0-operator/blob/main/.github/workflows/sync-docs/transformations.yaml).
+For nested nav groups with `groupTitles`, copy from
+[dash0-cli's `transformations.yaml`](https://github.com/dash0hq/dash0-cli/blob/main/.github/workflows/sync-docs/transformations.yaml).
 
 ```yaml
 common: # transformations applied to EVERY file, before per-file ones
@@ -244,6 +281,10 @@ doing all of D3, then D2, then D1.
      ```
    - If the caller relied on the old defaults, create those secrets with the previous values, then wire
      the inputs to them.
+   - [dash0-cli](https://github.com/dash0hq/dash0-cli/blob/main/.github/workflows/sync-docs-to-website.yaml)
+     is a caller still pinned to `v0.3.0` that has not done this migration yet;
+     [dash0-operator](https://github.com/dash0hq/dash0-operator/blob/main/.github/workflows/sync-docs-to-website.yaml)
+     is one that has, and shows the finished shape (target inputs supplied from secrets).
    - The rest of this release is optional and backward-compatible: `dry-run`, `coverage:`,
      `pr-reviewers`, `pr-assignees`. Adopt `dry-run: true` on non-release CI to catch drift early, and
      add a `coverage:` block to fail on newly added, unsynced docs pages.
