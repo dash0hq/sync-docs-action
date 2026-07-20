@@ -24,9 +24,9 @@ This skill is a set of workflows. Identify the task, then follow the matching wo
 - **Migrating a caller to a newer action version** → Workflow D.
 - **Diagnosing a failing run** → Workflow E.
 
-## Reference: two worked examples in production
+## Reference: worked examples in production
 
-Two Dash0 repos already consume this action. Read them before wiring or editing a caller — they are the
+Three Dash0 repos consume this action. Read them before wiring or editing a caller — they are the
 canonical, working shapes to copy from.
 
 - **`dash0hq/dash0-operator`** — a **flat sync** (all pages land as siblings under one directory) with a
@@ -45,12 +45,21 @@ canonical, working shapes to copy from.
     — the caller workflow.
   - [`.github/workflows/sync-docs/transformations.yaml`](https://github.com/dash0hq/dash0-cli/blob/main/.github/workflows/sync-docs/transformations.yaml)
     — a `nav:` block with `groupTitles`, files nesting into `github-actions/`.
+- **`dash0hq/dash0-sdk-web`** — a **flat `nav:` sync** (a `nav:` block, but every page lands directly
+  under one directory, so no `groupTitles`), pinned past the breaking release with `pr-reviewers` set.
+  Still on a feature branch, so link to the `add-sync-docs-to-website` branch, not `main`.
+  - [`.github/workflows/sync-docs-to-website.yaml`](https://github.com/dash0hq/dash0-sdk-web/blob/add-sync-docs-to-website/.github/workflows/sync-docs-to-website.yaml)
+    — the caller workflow (default `source-root` and `transformations-file`).
+  - [`.github/workflows/sync-docs/transformations.yaml`](https://github.com/dash0hq/dash0-sdk-web/blob/add-sync-docs-to-website/.github/workflows/sync-docs/transformations.yaml)
+    — `README.md` → `overview.md`, `INSTALL.md` → `installation.md`, `docs/sdk/*.md` → sibling pages, all
+    under `web-sdk/`, with a flat `nav:` block.
 
-These two repos deliberately differ in details you must not copy blindly. The operator names its PAT
-secret `DASH0_DOCS_REPO_GITHUB_PAT`; the CLI uses `DOCS_WEBSITE_PR_TOKEN`. The operator keeps its
-`transformations.yaml` at the repo-root `.github/` while syncing from `source-root:
-helm-chart/dash0-operator`, so its `transformations-file` steps back up with `../../`. Match the
-caller's own conventions, not the other repo's.
+These repos deliberately differ in details you must not copy blindly. The operator and sdk-web name
+their PAT secret `DASH0_DOCS_REPO_GITHUB_PAT`; the CLI uses `DOCS_WEBSITE_PR_TOKEN`. The operator keeps
+its `transformations.yaml` at the repo-root `.github/` while syncing from `source-root:
+helm-chart/dash0-operator`, so its `transformations-file` steps back up with `../../`; the CLI and
+sdk-web use the default `source-root` and file path. Match the caller's own conventions, not another
+repo's.
 
 ## Reference: the two modes
 
@@ -180,6 +189,8 @@ prepended, so do not hand-write frontmatter in the source docs.
 
 For a flat sync with a `coverage:` guard, copy from
 [dash0-operator's `transformations.yaml`](https://github.com/dash0hq/dash0-operator/blob/main/.github/workflows/sync-docs/transformations.yaml).
+For a flat `nav:` block (one directory, no `groupTitles`), copy from
+[dash0-sdk-web's `transformations.yaml`](https://github.com/dash0hq/dash0-sdk-web/blob/add-sync-docs-to-website/.github/workflows/sync-docs/transformations.yaml).
 For nested nav groups with `groupTitles`, copy from
 [dash0-cli's `transformations.yaml`](https://github.com/dash0hq/dash0-cli/blob/main/.github/workflows/sync-docs/transformations.yaml).
 
