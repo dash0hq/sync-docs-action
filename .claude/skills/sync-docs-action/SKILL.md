@@ -48,6 +48,8 @@ canonical, working shapes to copy from.
 - **`dash0hq/dash0-sdk-web`** — a **flat `nav:` sync** (a `nav:` block, but every page lands directly
   under one directory, so no `groupTitles`), pinned past the breaking release with `pr-reviewers` set.
   Still on a feature branch, so link to the `add-sync-docs-to-website` branch, not `main`.
+  **Re-point these two links to `main` once the `add-sync-docs-to-website` PR merges**; the branch links
+  break when that branch is deleted.
   - [`.github/workflows/sync-docs-to-website.yaml`](https://github.com/dash0hq/dash0-sdk-web/blob/add-sync-docs-to-website/.github/workflows/sync-docs-to-website.yaml)
     — the caller workflow (default `source-root` and `transformations-file`).
   - [`.github/workflows/sync-docs/transformations.yaml`](https://github.com/dash0hq/dash0-sdk-web/blob/add-sync-docs-to-website/.github/workflows/sync-docs/transformations.yaml)
