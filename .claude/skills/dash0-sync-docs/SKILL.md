@@ -1,5 +1,5 @@
 ---
-name: sync-docs-action
+name: dash0-sync-docs
 description: >-
   Wire up or debug a source repository's docs sync to the Dash0 website via the
   dash0hq/sync-docs-action composite action. Use when adding a sync-docs-to-website workflow,
