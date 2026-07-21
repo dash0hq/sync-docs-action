@@ -1,0 +1,15 @@
+{
+  "name": "dash0-sync-docs-action",
+  "description": "Dash0-internal Claude Code plugins hosted alongside dash0hq/sync-docs-action.",
+  "owner": {
+    "name": "Dash0",
+    "email": "support@dash0.com"
+  },
+  "plugins": [
+    {
+      "name": "dash0-sync-docs",
+      "source": "./plugins/dash0-sync-docs",
+      "description": "Wire up or debug a source repository's docs sync to the Dash0 website via dash0hq/sync-docs-action."
+    }
+  ]
+}

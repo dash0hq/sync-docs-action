@@ -28,6 +28,24 @@ sync-docs-action/
 
 Contributor and agent guidance is split across `CLAUDE.md` / `AGENTS.md` (thin index) and focused documents under `docs/` — start there before making changes.
 
+## Claude Code skill for Dash0 engineers
+
+This repo also ships a Claude Code skill (`dash0-sync-docs`) that walks through wiring up a new caller, authoring `transformations.yaml`, choosing dry-run vs full sync, migrating across action versions, and diagnosing failing runs.
+It is distributed as a plugin through this repo's own marketplace, so no separate repo needs to exist to host it.
+The marketplace is not published on any public Claude Code listing; only engineers who explicitly add it see the plugin.
+
+Install once per machine:
+
+```shell
+/plugin marketplace add dash0hq/sync-docs-action
+```
+
+```shell
+/plugin install dash0-sync-docs@dash0-sync-docs-action
+```
+
+Updates ride on git commits: `/plugin marketplace update dash0-sync-docs-action` (or the background auto-refresh) picks up the latest `main` and Claude Code reinstalls the plugin.
+
 ## Status
 
 Initial scaffold ports the transformation engine (with its 87-test suite) from the closed `dash0hq/dash0-website` in-repo prototype. See PR history for the design rationale that led to extracting to a standalone public repo.
