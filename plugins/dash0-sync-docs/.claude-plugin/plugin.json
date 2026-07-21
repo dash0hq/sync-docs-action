@@ -1,0 +1,10 @@
+{
+  "name": "dash0-sync-docs",
+  "description": "Wire up or debug a source repository's docs sync to the Dash0 website via dash0hq/sync-docs-action.",
+  "author": {
+    "name": "Dash0"
+  },
+  "homepage": "https://github.com/dash0hq/sync-docs-action",
+  "repository": "https://github.com/dash0hq/sync-docs-action",
+  "license": "Apache-2.0"
+}
