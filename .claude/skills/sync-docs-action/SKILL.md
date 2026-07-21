@@ -217,17 +217,49 @@ nav: # optional: emit a nav.json describing the page hierarchy
   groupTitles: # optional: title for each nested subdirectory
     github-actions: GitHub Actions
 
-files: # the opt-in allowlist
-  - source: docs/about.md
-    target: <dir>/about.md
-    title: About
-    description: ...
-    transformations: # optional, per-file, applied after common
-      - description: rewrite a relative link
+files: # the opt-in allowlist — one entry per page to publish, anything not listed is ignored
+  # 1. A page that needs per-file fixups the other pages do not. `transformations:` holds edits that
+  #    apply to THIS file only, running after every `common:` transformation. Use it for content that
+  #    exists in one source file: repo-only links, badges, intro lines that do not belong on the website.
+  - source: README.md
+    target: <dir>/overview.md
+    title: Overview
+    description: What this project is and how to get started.
+    transformations:
+      - description: strip the CI/license badges at the top of the README
         type: replace-regex
-        find: '\]\(github-actions\.md\)'
-        replace: "](github-actions/about)"
+        find: '^\[!\[[^\n]*\n'
+        replace: ""
+        flags:
+          - multiline
+      - description: rewrite a repo-relative link that has no page on the website
+        type: replace-regex
+        find: '\]\(CONTRIBUTING\.md\)'
+        replace: "](https://github.com/dash0hq/<repo>/blob/main/CONTRIBUTING.md)"
+      - description: drop the "This repository contains ..." intro line
+        type: remove-line
+        line: "This repository contains the source for the widget."
+
+  # 2. A page that needs no per-file edits. Omit `transformations:` entirely; only `common:` runs on it.
+  - source: docs/installation.md
+    target: <dir>/installation.md
+    title: Installation
+    description: Install and configure the project.
+
+  # 3. Another edit-free page. Relative sibling links between synced pages are rewritten automatically
+  #    (the .md suffix is dropped), so no per-file transformation is needed just to fix links.
+  - source: docs/configuration.md
+    target: <dir>/configuration.md
+    title: Configuration
+    description: Reference for every configuration option.
 ```
+
+`transformations:` on a `files:` entry is **optional and per-file**. It is a list of `prepend` /
+`replace-regex` / `remove-line` edits applied to that one source file, in order, **after** the shared
+`common:` transformations. Reach for it when an edit is specific to a single page — a badge only the
+README carries, a repo-relative link that has no website equivalent, a heading that duplicates the
+generated frontmatter title. Edits every page needs belong in `common:` instead; links between synced
+pages are already rewritten automatically, so do not add per-file transformations just for those.
 
 Transformation types:
 
