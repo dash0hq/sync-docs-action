@@ -834,6 +834,99 @@ files:
 `;
 		assert.throws(() => parseConfig(yaml), /nav\.groupTitles.*non-empty/);
 	});
+
+	it("parses a nav block without title, with pathPrefix", () => {
+		const yaml = `
+nav:
+  target: dash0-operator/nav.json
+  order: 52.5
+  id: dash0-operator
+  parentPath: Dash0 Operator for Kubernetes
+  pathPrefix: dash0/monitoring/kubernetes
+files:
+  - source: README.md
+    target: dash0-operator/overview.md
+    title: T
+    description: D
+`;
+		const cfg = parseConfig(yaml);
+		assert.deepEqual(cfg.nav, {
+			target: "dash0-operator/nav.json",
+			order: 52.5,
+			id: "dash0-operator",
+			parentPath: "Dash0 Operator for Kubernetes",
+			pathPrefix: "dash0/monitoring/kubernetes",
+		});
+	});
+
+	it("rejects a nav.title that is empty", () => {
+		const yaml = `
+nav:
+  target: nav.json
+  order: 1
+  id: x
+  title: ""
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+`;
+		assert.throws(() => parseConfig(yaml), /nav\.title.*non-empty/);
+	});
+
+	for (const prefix of ["/dash0/monitoring", "dash0/monitoring/"]) {
+		it(`rejects a nav.pathPrefix with a leading or trailing slash (${prefix})`, () => {
+			const yaml = `
+nav:
+  target: nav.json
+  order: 1
+  id: x
+  pathPrefix: ${prefix}
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+`;
+			assert.throws(() => parseConfig(yaml), /nav\.pathPrefix must not start or end with '\/'/);
+		});
+	}
+
+	it("parses a file navTitle", () => {
+		const yaml = `
+files:
+  - source: README.md
+    target: out.md
+    title: Dash0 SignalControl Edge
+    navTitle: SignalControl Edge
+    description: D
+`;
+		assert.equal(parseConfig(yaml).files[0]?.navTitle, "SignalControl Edge");
+	});
+
+	it("leaves navTitle unset on a file entry that does not declare it", () => {
+		const yaml = `
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+`;
+		assert.ok(!("navTitle" in parseConfig(yaml).files[0]!));
+	});
+
+	it("rejects a file navTitle that is empty", () => {
+		const yaml = `
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    navTitle: ""
+    description: D
+`;
+		assert.throws(() => parseConfig(yaml), /files\[0\]\.navTitle.*non-empty/);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -1030,6 +1123,58 @@ describe("generateNav", () => {
 			{ title: "foo-a", children: [{ title: "A", path: "foo-a/page.md" }] },
 			{ title: "foo-b", children: [{ title: "B", path: "foo-b/page.md" }] },
 		]);
+	});
+
+	it("emits entries directly as items when the config has no title", () => {
+		const cfg: NavConfig = {
+			target: "dash0-operator/nav.json",
+			order: 52.5,
+			id: "dash0-operator",
+			parentPath: "Dash0 Operator for Kubernetes",
+		};
+		const files: FileEntry[] = [
+			fileEntry({ target: "dash0-operator/overview.md", title: "Overview" }),
+			fileEntry({ target: "dash0-operator/installation.md", title: "Installation" }),
+		];
+		assert.deepEqual(generateNav(cfg, files), {
+			order: 52.5,
+			id: "dash0-operator",
+			parentPath: "Dash0 Operator for Kubernetes",
+			items: [
+				{ title: "Overview", path: "dash0-operator/overview.md" },
+				{ title: "Installation", path: "dash0-operator/installation.md" },
+			],
+		});
+	});
+
+	it("prepends pathPrefix to every path, including nested ones", () => {
+		const cfg: NavConfig = { ...navConfig, pathPrefix: "dash0/monitoring/kubernetes" };
+		const files: FileEntry[] = [
+			fileEntry({ target: "dash0-operator/overview.md", title: "Overview" }),
+			fileEntry({ target: "dash0-operator/sub/page.md", title: "Page" }),
+		];
+		assert.deepEqual(generateNav(cfg, files).items[0]?.children, [
+			{ title: "Overview", path: "dash0/monitoring/kubernetes/dash0-operator/overview.md" },
+			{
+				title: "sub",
+				children: [
+					{ title: "Page", path: "dash0/monitoring/kubernetes/dash0-operator/sub/page.md" },
+				],
+			},
+		]);
+	});
+
+	it("uses navTitle over title for the entry label when set", () => {
+		const files: FileEntry[] = [
+			fileEntry({
+				target: "a/x.md",
+				title: "Dash0 SignalControl Edge",
+				navTitle: "SignalControl Edge",
+			}),
+			fileEntry({ target: "a/y.md", title: "Troubleshooting" }),
+		];
+		const titles = generateNav(navConfig, files).items[0]?.children?.map((c) => c.title);
+		assert.deepEqual(titles, ["SignalControl Edge", "Troubleshooting"]);
 	});
 });
 
