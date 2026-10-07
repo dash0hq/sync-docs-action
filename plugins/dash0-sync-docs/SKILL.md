@@ -211,9 +211,10 @@ coverage: # optional guard: every file matching include must be synced or ignore
 nav: # optional: emit a nav.json describing the page hierarchy
   target: <dir>/nav.json
   id: <slug>
-  title: <Section title>
+  title: <Section title> # optional: omit to emit the entries directly into `items`
   order: 72.6 # finite number
   parentPath: Tooling # optional
+  pathPrefix: dash0/miscellaneous/tooling # optional: prepended to every nav entry's path
   groupTitles: # optional: title for each nested subdirectory
     github-actions: GitHub Actions
 
@@ -274,6 +275,12 @@ The only supported placeholder in inserted or replacement text is `$timestamp` (
 Nav generation: `nav.json` is derived from the on-disk hierarchy of the `target` paths. Files sharing
 the common directory prefix become top-level leaves; files in a deeper subdirectory nest inside a
 `{ title, children }` group whose title comes from `groupTitles[<subdir slug>]`.
+Each entry's label is the file's `navTitle` when set, otherwise its `title`.
+`dash0-website` resolves nav `path` values against its docs content root, while `target` is relative to
+`target-directory`. When `target-directory` is below the content root, set `nav.pathPrefix` to the
+difference (for example `dash0/monitoring/kubernetes`), otherwise every nav link is broken.
+Omit `nav.title` to attach the entries to an existing placeholder item instead of wrapping them in a new
+group: set `parentPath` to the placeholder's exact title and `order` above the fragment that defines it.
 
 ## Workflow C — verify before pushing
 

@@ -45,6 +45,8 @@ export interface FileEntry {
 	target: string;
 	title: string;
 	description: string;
+	/** Label for the file's nav.json entry. Falls back to `title` when absent. */
+	navTitle?: string;
 	transformations?: Transformation[];
 }
 
@@ -53,7 +55,17 @@ export interface NavConfig {
 	order: number;
 	id: string;
 	parentPath?: string;
-	title: string;
+	/**
+	 * Title of the single top-level group wrapping the entries. When absent, the entries are emitted
+	 * directly as `items`, for attaching them to an existing placeholder item via `parentPath`.
+	 */
+	title?: string;
+	/**
+	 * Path segment(s) prepended to each entry's `path`. `dash0-website` resolves nav paths against its
+	 * content root, while file `target`s are relative to `target-directory`; when the two differ, this
+	 * prefix bridges the gap.
+	 */
+	pathPrefix?: string;
 	/**
 	 * Optional mapping from directory slug (a path segment in a file's `target`) to display title.
 	 * When files land in subdirectories below the common prefix of all `target`s, those
@@ -178,25 +190,24 @@ function validateNavConfig(raw: unknown): NavConfig | undefined {
 	const obj = raw as Record<string, unknown>;
 	const target = requireString(obj, "target", "nav");
 	const id = requireString(obj, "id", "nav");
-	const title = requireString(obj, "title", "nav");
+	const title = optionalString(obj, "title", "nav");
+	const pathPrefix = optionalString(obj, "pathPrefix", "nav");
+	if (pathPrefix !== undefined && (pathPrefix.startsWith("/") || pathPrefix.endsWith("/"))) {
+		throw new Error("nav.pathPrefix must not start or end with '/'");
+	}
 	const orderRaw = obj["order"];
 	if (typeof orderRaw !== "number" || !Number.isFinite(orderRaw)) {
 		throw new Error("nav.order must be a finite number");
 	}
-	const parentPathRaw = obj["parentPath"];
-	if (
-		parentPathRaw !== undefined &&
-		(typeof parentPathRaw !== "string" || parentPathRaw.length === 0)
-	) {
-		throw new Error("nav.parentPath, when present, must be a non-empty string");
-	}
+	const parentPath = optionalString(obj, "parentPath", "nav");
 	const groupTitles = validateGroupTitles(obj["groupTitles"]);
 	return {
 		target,
 		id,
-		title,
 		order: orderRaw,
-		...(parentPathRaw !== undefined ? { parentPath: parentPathRaw as string } : {}),
+		...(title !== undefined ? { title } : {}),
+		...(pathPrefix !== undefined ? { pathPrefix } : {}),
+		...(parentPath !== undefined ? { parentPath } : {}),
 		...(groupTitles !== undefined ? { groupTitles } : {}),
 	};
 }
@@ -226,6 +237,7 @@ function validateFileEntry(raw: unknown, path: string): FileEntry {
 	const target = requireString(obj, "target", path);
 	const title = requireString(obj, "title", path);
 	const description = requireString(obj, "description", path);
+	const navTitle = optionalString(obj, "navTitle", path);
 	const transformationsRaw = obj["transformations"] ?? [];
 	if (!Array.isArray(transformationsRaw)) {
 		throw new Error(`${path}.transformations must be a list`);
@@ -233,7 +245,14 @@ function validateFileEntry(raw: unknown, path: string): FileEntry {
 	const transformations = transformationsRaw.map((t, i) =>
 		validateTransformation(t, `${path}.transformations[${i}]`),
 	);
-	return { source, target, title, description, transformations };
+	return {
+		source,
+		target,
+		title,
+		description,
+		...(navTitle !== undefined ? { navTitle } : {}),
+		transformations,
+	};
 }
 
 function validateTransformation(raw: unknown, path: string): Transformation {
@@ -288,6 +307,19 @@ function requireString(
 	const value = obj[key];
 	if (typeof value !== "string" || (!allowEmpty && value.length === 0)) {
 		throw new Error(`${path}.${key} must be a non-empty string`);
+	}
+	return value;
+}
+
+function optionalString(
+	obj: Record<string, unknown>,
+	key: string,
+	path: string,
+): string | undefined {
+	const value = obj[key];
+	if (value === undefined) return undefined;
+	if (typeof value !== "string" || value.length === 0) {
+		throw new Error(`${path}.${key}, when present, must be a non-empty string`);
 	}
 	return value;
 }
@@ -631,7 +663,8 @@ export function prependFrontmatter(
 /**
  * Build a `nav.json` document from the file entries the sync produces.
  *
- * Emits a single top-level group (`items[0]`) titled `navConfig.title`. The group's `children` mirror
+ * Emits a single top-level group (`items[0]`) titled `navConfig.title`, or, when `navConfig.title`
+ * is absent, emits the entries directly as `items`. The entries mirror
  * the on-disk hierarchy implied by each file's `target` path: files that share the common directory
  * prefix appear as leaves at the top of the group, and files that sit in a deeper subdirectory are
  * nested inside a group node whose title is looked up in `navConfig.groupTitles` (falling back to the
@@ -643,8 +676,8 @@ export function prependFrontmatter(
  *
  * File order is preserved: leaves appear in the order the files were declared, and each new group
  * is inserted at the position of the first file that references it. Each leaf's `title` comes from
- * the file entry's `title` and its `path` from the file entry's `target` (the same value used by
- * `dash0-website`'s content path resolver).
+ * the file entry's `navTitle` (falling back to `title`) and its `path` from the file entry's
+ * `target`, prefixed with `navConfig.pathPrefix` when set.
  *
  * The function is pure: it does no I/O and does not mutate its inputs. The caller is responsible for
  * serialising the result to JSON and writing it to disk.
@@ -677,15 +710,19 @@ export function generateNav(navConfig: NavConfig, files: FileEntry[]): NavFile {
 			}
 			siblings = group.children!;
 		}
-		siblings.push({ title: file.title, path: file.target });
+		const navPath =
+			navConfig.pathPrefix !== undefined ? `${navConfig.pathPrefix}/${file.target}` : file.target;
+		siblings.push({ title: file.navTitle ?? file.title, path: navPath });
 	}
 
-	const group: NavItem = { title: navConfig.title, children: rootChildren };
 	return {
 		order: navConfig.order,
 		id: navConfig.id,
 		...(navConfig.parentPath !== undefined ? { parentPath: navConfig.parentPath } : {}),
-		items: [group],
+		items:
+			navConfig.title !== undefined
+				? [{ title: navConfig.title, children: rootChildren }]
+				: rootChildren,
 	};
 }
 

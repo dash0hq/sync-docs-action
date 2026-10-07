@@ -40,6 +40,9 @@ coverage:
   `source` is relative to the source root; `target` is relative to `target-directory` in the docs repo.
   `files` is the opt-in list: any file in the source repo that is not declared here is ignored by the sync (unless a `coverage` block makes that an error — see below).
 - `title`, `description` — rendered into the emitted frontmatter.
+- `navTitle` (per file) — optional label for the file's entry in the generated `nav.json`.
+  Defaults to `title`.
+  Use it when the sidebar label should be shorter than the page title.
 - `transformations` (per file) — optional list applied after `common`, in order.
 - `coverage` — optional.
   When present, the run fails (before any transformation) if a file matching one of the `include` globs (resolved relative to the source root) neither appears as a `files[].source` nor is listed under `ignore`.
@@ -113,11 +116,21 @@ Fields:
 - `order` — number used by `dash0-website` to sort sections.
 - `id` — stable identifier for the section (matches `dash0-website`'s existing nav.json convention).
 - `parentPath` — optional; parent section title shown in the nav breadcrumb.
-- `title` — the section title rendered as `items[0].title`.
+- `title` — optional; the section title rendered as `items[0].title`.
+  When omitted, the entries are emitted directly as `items` without a wrapping group (see [Attaching to a placeholder](#attaching-to-a-placeholder) below).
+- `pathPrefix` — optional; prepended (with a `/`) to every entry's `path`.
+  Must not start or end with `/`.
 - `groupTitles` — optional map from directory slug to display title, used when the file targets nest below the common prefix (see [Nested groups](#nested-groups) below).
 
-The generator emits a single group under `items[0]` whose `children` reflect the on-disk hierarchy of the `target` paths.
-Each leaf is a `{ title, path }` entry whose `title` comes from the file's `title` and whose `path` is the file's `target`, in the order the files are declared.
+When `title` is set, the generator emits a single group under `items[0]` whose `children` reflect the on-disk hierarchy of the `target` paths.
+Without `title`, that same list of entries becomes `items` itself.
+Each leaf is a `{ title, path }` entry, in the order the files are declared.
+Its `title` comes from the file's `navTitle`, falling back to `title`.
+Its `path` is the file's `target`, prefixed with `pathPrefix` when set.
+
+`dash0-website` resolves `path` against its docs content root, but `target` is relative to `target-directory`.
+When the caller's `target-directory` is the content root, the two agree and `pathPrefix` is unnecessary.
+When `target-directory` points below the content root (for example at `…/content/dash0/monitoring/kubernetes`), set `pathPrefix` to the missing segments (`dash0/monitoring/kubernetes`).
 
 For a flat sync (every file lands in the same directory), this produces the same shape used across `dash0-website` (`items[0]` with a `title` and a `children` list of `{ title, path }` leaves).
 
@@ -160,6 +173,22 @@ files:
 The common prefix is `miscellaneous/tooling/dash0-cli`, so the first two files land as top-level leaves and the last two are grouped under a `"GitHub Actions"` node (title looked up in `groupTitles`; slugs not listed there fall back to using the slug itself).
 Nesting can go arbitrarily deep — every additional directory segment produces another group level.
 Groups are inserted at the position of the first file that references them; a later file reusing the same subdirectory joins the existing group instead of opening a new one.
+
+### Attaching to a placeholder
+
+`dash0-website` merges a fragment by appending its `items` to the children of the item whose title equals `parentPath`.
+Appending means a generated group always lands after every sibling the parent already has.
+To place synced entries in the middle of a hand-maintained list, the parent fragment declares a title-only placeholder item at the desired position.
+The synced fragment then omits `title`, sets `parentPath` to the placeholder's exact title, and uses an `order` higher than the parent fragment's so the placeholder exists when the fragment is merged:
+
+```yaml
+nav:
+  target: dash0-operator/nav.json
+  order: 52.5
+  id: monitoring-kubernetes-dash0-operator
+  parentPath: Dash0 Operator for Kubernetes
+  pathPrefix: dash0/monitoring/kubernetes
+```
 
 ## Extension points
 
