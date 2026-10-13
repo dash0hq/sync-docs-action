@@ -28,7 +28,7 @@ Detailed guidelines are split into focused documents:
 - @docs/action.md — composite action design, inputs, PR flow, how to change caller-facing surface
 - @docs/transformation-engine.md — engine architecture, `transformations.yaml` schema, extension points
 - @docs/docs-invariants.md — status and planned scope of `@dash0hq/docs-invariants`
-- @docs/releasing.md — tag conventions, when to cut a release, what to include in the changelog
+- @docs/releasing.md — tag conventions, when to cut a release, what to include in the release notes
 
 ## Hard rules
 

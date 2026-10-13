@@ -1,6 +1,6 @@
 # Releasing
 
-How to cut a release and what to include in the changelog.
+How to cut a release and what to include in the release notes.
 
 ## Two kinds of release, tracked separately
 
@@ -15,10 +15,27 @@ Callers who prefer named tags to raw SHAs can pin `@v1.0.0` and let Dependabot b
 Incidental refactors of internal packages don't require a tag.
 
 **How to cut.**
+Use either of the two routes below.
+No workflow runs on `v*` tags, so both produce the same result for callers.
+
+Route 1: create the release in the GitHub UI.
+
+1. Open "Draft a new release" on the repository's releases page.
+2. Type the new tag `v<X.Y.Z>` into the tag field and pick `main` as the target.
+   GitHub creates the tag from the current tip of `main` when you publish.
+3. Write the release notes (see [Release notes](#release-notes) below) and publish.
+
+Check the tip of `main` before you publish.
+Anything merged in the meantime goes into the release.
+
+Route 2: push the tag from the command line, then create the release.
 
 1. `git tag -a v<X.Y.Z> -m "Release v<X.Y.Z>"` on `main`.
 2. `git push origin v<X.Y.Z>`.
-3. Create a GitHub Release from that tag with release notes copied from the CHANGELOG entry for this version.
+3. Create a GitHub Release from that tag and write the release notes.
+
+The UI route creates a lightweight tag and the command-line route an annotated one.
+Callers pinning `@v<X.Y.Z>` can't tell the difference.
 
 Semver rules for `action.yml`:
 
@@ -58,11 +75,21 @@ Package tags are namespaced (`docs-invariants-v<X.Y.Z>`) so they don't collide w
 **Pre-release tags** (e.g. `docs-invariants-v0.1.0-alpha.1`) are supported: the workflow's tag pattern matches both plain semver and pre-release suffixes.
 Use pre-release tags to iterate before cutting a stable release.
 
-## CHANGELOG
+## Release notes
 
-There is no `CHANGELOG.md` yet.
-Add one alongside the first tagged release.
-Follow the Keep a Changelog format (`Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security`).
+The GitHub Release is the only changelog.
+There is no `CHANGELOG.md`.
 
-Entries should describe **what changed and why**, not implementation details.
-Callers reading the changelog want to know: "does this affect me?" and "what do I need to change if I bump?"
+Write the notes for callers of the action.
+Describe **what changed and why**, not implementation details.
+A caller reading them needs to know whether the release affects them and what to change when they bump.
+Leave out changes that don't reach callers, such as internal refactors, CI changes, or repo tooling.
+
+Structure the notes like previous releases:
+
+- `## What's new` with one `###` subsection per caller-facing change, including a YAML example where it helps.
+- `## Breaking changes`, only when the release has any.
+- `## Upgrading` stating whether existing callers need to change anything to bump.
+
+GitHub's "Generate release notes" button produces a list of merged PRs.
+Use it as a starting point for finding the relevant changes, not as the published notes.
