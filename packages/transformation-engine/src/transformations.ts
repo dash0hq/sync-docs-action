@@ -47,6 +47,8 @@ export interface FileEntry {
 	description: string;
 	/** Label for the file's nav.json entry. Falls back to `title` when absent. */
 	navTitle?: string;
+	/** Tags rendered into the emitted frontmatter. Omitted from the frontmatter when absent. */
+	tags?: string[];
 	transformations?: Transformation[];
 }
 
@@ -238,6 +240,7 @@ function validateFileEntry(raw: unknown, path: string): FileEntry {
 	const title = requireString(obj, "title", path);
 	const description = requireString(obj, "description", path);
 	const navTitle = optionalString(obj, "navTitle", path);
+	const tags = optionalStringList(obj, "tags", path);
 	const transformationsRaw = obj["transformations"] ?? [];
 	if (!Array.isArray(transformationsRaw)) {
 		throw new Error(`${path}.transformations must be a list`);
@@ -251,6 +254,7 @@ function validateFileEntry(raw: unknown, path: string): FileEntry {
 		title,
 		description,
 		...(navTitle !== undefined ? { navTitle } : {}),
+		...(tags !== undefined ? { tags } : {}),
 		transformations,
 	};
 }
@@ -322,6 +326,26 @@ function optionalString(
 		throw new Error(`${path}.${key}, when present, must be a non-empty string`);
 	}
 	return value;
+}
+
+function optionalStringList(
+	obj: Record<string, unknown>,
+	key: string,
+	path: string,
+): string[] | undefined {
+	const value = obj[key];
+	if (value === undefined) return undefined;
+	if (
+		!Array.isArray(value) ||
+		value.length === 0 ||
+		value.some((item) => typeof item !== "string" || item.length === 0)
+	) {
+		throw new Error(`${path}.${key}, when present, must be a non-empty list of non-empty strings`);
+	}
+	if (new Set(value).size !== value.length) {
+		throw new Error(`${path}.${key} must not contain duplicates`);
+	}
+	return value as string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -631,8 +655,9 @@ export function rewriteIntraDocsLinks(content: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Prepend the generated frontmatter block (title, description, lastUpdated) to `content`, dropping
- * any leading blank lines that the earlier transformations may have left behind.
+ * Prepend the generated frontmatter block (title, description, lastUpdated, plus tags when the file
+ * entry declares them) to `content`, dropping any leading blank lines that the earlier
+ * transformations may have left behind.
  *
  * The title/description/lastUpdated values are serialised through the YAML library so any value that
  * would break a naive `key: value` line (colons, hashes, leading `-`, quotes, embedded newlines from
@@ -650,6 +675,7 @@ export function prependFrontmatter(
 			title: fileEntry.title,
 			description: fileEntry.description,
 			lastUpdated: placeholders.$timestamp,
+			...(fileEntry.tags !== undefined ? { tags: fileEntry.tags } : {}),
 		},
 		{ lineWidth: 0 },
 	);

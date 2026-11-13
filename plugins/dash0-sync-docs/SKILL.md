@@ -175,8 +175,9 @@ Facts that constrain this workflow:
 ## Workflow B — author or edit transformations.yaml
 
 The `files:` list is the **sole opt-in allowlist**; anything in the source repo not listed there is
-ignored. Frontmatter (`title`/`description` + a `lastUpdated` timestamp) is generated from each entry and
-prepended, so do not hand-write frontmatter in the source docs.
+ignored. Frontmatter (`title`/`description` + a `lastUpdated` timestamp, plus `tags` when the entry
+declares them) is generated from each entry and prepended, so do not hand-write frontmatter in the source
+docs, and do not add frontmatter to the synced pages in the target repository: the next sync overwrites it.
 
 1. **Add one `files:` entry per page** to publish. Set `source` (relative to `source-root`), `target`
    (relative to `target-directory` — do **not** repeat the target-directory prefix, and never start with
@@ -246,6 +247,8 @@ files: # the opt-in allowlist — one entry per page to publish, anything not li
     target: <dir>/installation.md
     title: Installation
     description: Install and configure the project.
+    tags: # optional; values must come from the target site's tag vocabulary
+      - kubernetes
 
   # 3. Another edit-free page. Relative sibling links between synced pages are rewritten automatically
   #    (the .md suffix is dropped), so no per-file transformation is needed just to fix links.

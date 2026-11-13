@@ -40,6 +40,9 @@ coverage:
   `source` is relative to the source root; `target` is relative to `target-directory` in the docs repo.
   `files` is the opt-in list: any file in the source repo that is not declared here is ignored by the sync (unless a `coverage` block makes that an error — see below).
 - `title`, `description` — rendered into the emitted frontmatter.
+- `tags` (per file) — optional list of tags rendered into the emitted frontmatter.
+  Values are passed through as-is; the target site owns the tag vocabulary.
+  Declare tags here instead of adding them to the synced pages in the target repository, where the next sync would overwrite them.
 - `navTitle` (per file) — optional label for the file's entry in the generated `nav.json`.
   Defaults to `title`.
   Use it when the sidebar label should be shorter than the page title.
@@ -86,6 +89,8 @@ These rewrites exist because the website serves docs pages under extensionless U
 title: <title>
 description: <description>
 lastUpdated: <ISO 8601 UTC timestamp>
+tags: # only when the file entry declares `tags`
+  - <tag>
 ---
 ```
 

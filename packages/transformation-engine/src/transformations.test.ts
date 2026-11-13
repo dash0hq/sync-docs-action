@@ -447,6 +447,20 @@ describe("prependFrontmatter", () => {
 		);
 	});
 
+	it("omits tags when the file entry does not declare them", () => {
+		const out = prependFrontmatter("body", fileEntry(), PLACEHOLDERS);
+		assert.ok(!("tags" in extractFrontmatter(out)));
+	});
+
+	it("emits declared tags as a YAML list after lastUpdated", () => {
+		const entry = fileEntry({ tags: ["real-user-monitoring", "web"] });
+		const out = prependFrontmatter("body", entry, PLACEHOLDERS);
+		assert.equal(
+			out,
+			`---\ntitle: Test Title\ndescription: Test description.\nlastUpdated: ${FIXED_TIMESTAMP}\ntags:\n  - real-user-monitoring\n  - web\n---\nbody`,
+		);
+	});
+
 	it("drops leading blank lines from the content before attaching the frontmatter", () => {
 		const out = prependFrontmatter("\n\n\nHello", fileEntry(), PLACEHOLDERS);
 		assert.ok(out.endsWith("---\nHello"));
@@ -926,6 +940,65 @@ files:
     description: D
 `;
 		assert.throws(() => parseConfig(yaml), /files\[0\]\.navTitle.*non-empty/);
+	});
+
+	it("parses file tags", () => {
+		const yaml = `
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+    tags:
+      - real-user-monitoring
+      - web
+`;
+		assert.deepEqual(parseConfig(yaml).files[0]?.tags, ["real-user-monitoring", "web"]);
+	});
+
+	it("leaves tags unset on a file entry that does not declare them", () => {
+		const yaml = `
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+`;
+		assert.ok(!("tags" in parseConfig(yaml).files[0]!));
+	});
+
+	for (const [label, tagsYaml] of [
+		["a scalar", "tags: real-user-monitoring"],
+		["an empty list", "tags: []"],
+		["an empty string item", 'tags: [""]'],
+		["a non-string item", "tags: [42]"],
+	] as const) {
+		it(`rejects file tags given as ${label}`, () => {
+			const yaml = `
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+    ${tagsYaml}
+`;
+			assert.throws(
+				() => parseConfig(yaml),
+				/files\[0\]\.tags.*non-empty list of non-empty strings/,
+			);
+		});
+	}
+
+	it("rejects duplicate file tags", () => {
+		const yaml = `
+files:
+  - source: README.md
+    target: out.md
+    title: T
+    description: D
+    tags: [web, web]
+`;
+		assert.throws(() => parseConfig(yaml), /files\[0\]\.tags must not contain duplicates/);
 	});
 });
 
